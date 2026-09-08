@@ -19,7 +19,7 @@ const PLATFORM_TARGETS = {
 
 const STYLE_BRIEF = {
   transparent:
-    "Minimal coloration. Surgical EQ cuts before boosts. Gentle 1.5-2:1 compression. Preserve transients and dynamics. No saturation.",
+    "Minimal coloration. Surgical EQ cuts before boosts. Prefer the adaptive resonanceSuppressor over wide static cuts for any harshness or ringing. Gentle 1.5-2:1 compression. Preserve transients and dynamics. No saturation.",
   warm:
     "Analog-style warmth: gentle low-shelf lift, slight high-shelf roll-off, soft-knee compression, subtle tape/tube saturation drive 10-20%.",
   punchy:
@@ -29,7 +29,7 @@ const STYLE_BRIEF = {
   vintage:
     "Vinyl/tape vibe: soft high roll-off above 12kHz, 100Hz warmth, mild compression with long release, saturation 25-35%, narrower stereo.",
   vocal:
-    "Voice-forward: 200-400Hz cut, 3-5kHz presence boost, 8-10kHz air, de-ess hint at 6-8kHz, gentle 2:1 comp, no aggressive limiting.",
+    "Voice-forward: 200-400Hz cut, 3-5kHz presence boost, 8-10kHz air, de-ess hint at 6-8kHz, resonanceSuppressor amount 40-60 for mouth/room resonances, gentle 2:1 comp, no aggressive limiting.",
 };
 
 const INTENSITY_HINT = {
@@ -55,7 +55,9 @@ Your job: design a complete mastering chain. Hard rules:
 5. If source has issues, FIX them first (e.g. mud cut at 250Hz, de-harsh 3kHz, mono-compat HPF on sides below 120Hz).
 6. Compressor attack/release must match transient density (high transients → slower attack).
 7. Stereo width: never push correlation below 0.2; on low-end mono compat <0.5, apply mid/side narrowing of sides below 200Hz.
-8. Include explicit makeup gain so post-comp RMS matches pre-comp within 1 dB.`;
+8. Include explicit makeup gain so post-comp RMS matches pre-comp within 1 dB.
+9. For harshness, sibilance or resonant ringing (harshnessIndex > 40, high mudIndex, sibilance > -30 dBFS), reach for the adaptive resonanceSuppressor BEFORE wide static EQ cuts — it only pulls down bins that stick out above the local spectral envelope and leaves broadband tone intact.
+10. saturationMode picks the harmonic character of any saturation you dial in: tape (odd, glue), tube (2nd-harmonic warmth), transformer (rounded top), clip (aggressive).`;
   }
   if (stage === "validate") {
     return `${base}
@@ -113,6 +115,16 @@ function enforceSafety(configObj, platform) {
   }
   if (configObj.bassMono) {
     configObj.bassMono.freq = Math.max(40, Math.min(300, Number(configObj.bassMono.freq) || 120));
+  }
+  if (configObj.resonanceSuppressor) {
+    const r = configObj.resonanceSuppressor;
+    r.amount = Math.max(0, Math.min(100, Number(r.amount) || 0));
+    r.depth = Math.max(3, Math.min(24, Number(r.depth) || 12));
+    r.threshold = Math.max(1, Math.min(18, Number(r.threshold) || 6));
+    if (r.amount <= 0) delete configObj.resonanceSuppressor;
+  }
+  if (configObj.saturationMode && !["tape", "tube", "transformer", "clip"].includes(configObj.saturationMode)) {
+    delete configObj.saturationMode;
   }
   configObj.targetLUFS = platform.lufs;
   return configObj;
@@ -185,6 +197,8 @@ export async function aiMasteringHandler(c) {
   "limiter": {"ceiling": number (dBFS), "release": number (ms)},
   "targetLUFS": number,
   "saturation": number (0-100, optional),
+  "saturationMode": "tape|tube|transformer|clip" (optional, the harmonic character for the saturation amount),
+  "resonanceSuppressor": {"amount": number (0-100), "depth": number (3-24 dB max cut), "threshold": number (1-18 dB above envelope)} (optional — adaptive, dynamic; use for harshness / sibilance / resonant ringing instead of broad EQ cuts),
   "lowCut": {"freq": number (12-200, subsonic high-pass)} (optional, if sub-20Hz rumble or muddy sub),
   "tilt": number (-6..+6 dB, optional; negative = darker, positive = brighter — use for broad tonal correction),
   "bassMono": {"freq": number (40-300)} (optional, if low-end mono compat < 0.5),

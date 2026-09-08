@@ -53,6 +53,17 @@ export function aiConfigToParams(config: any, prev: ProcessingParams): Partial<P
     p.saturation = config.saturation;
     p.saturationEnabled = config.saturation > 0;
   }
+  if (config.saturationMode && ['tape', 'tube', 'transformer', 'clip'].includes(config.saturationMode)) {
+    p.satMode = config.saturationMode;
+  }
+
+  if (config.resonanceSuppressor && Number(config.resonanceSuppressor.amount) > 0) {
+    const r = config.resonanceSuppressor;
+    p.resoEnabled = true;
+    p.resoAmount = Math.max(0, Math.min(100, Number(r.amount)));
+    if (r.depth != null) p.resoDepth = Math.max(3, Math.min(24, Number(r.depth)));
+    if (r.threshold != null) p.resoThreshold = Math.max(1, Math.min(18, Number(r.threshold)));
+  }
 
   if (config.lowCut && typeof config.lowCut.freq === 'number') {
     p.lowCutEnabled = true;

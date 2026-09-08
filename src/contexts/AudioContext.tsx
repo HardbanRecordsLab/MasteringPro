@@ -88,7 +88,7 @@ export interface ProcessingParams {
   msSideLowFreq: number; msSideMidFreq: number; msSideHighFreq: number;
 }
 
-const DEFAULT_PROCESSING: ProcessingParams = {
+export const DEFAULT_PROCESSING: ProcessingParams = {
   inputGain: 0,
   lowCutEnabled: false,
   lowCutFreq: 30,
