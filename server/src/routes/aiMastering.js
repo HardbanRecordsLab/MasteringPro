@@ -67,7 +67,8 @@ Your job: match source to reference. Compute deltas in frequency balance, dynami
 
 function buildMetricsText(m, label = "TRACK") {
   return `${label} METRICS:
-- LUFS-I: ${m.lufs} | True Peak: ${m.truePeak} dBFS | DR: ${m.dynamicRange} | LRA: ${m.lra} LU | Crest: ${m.crestFactor} dB
+- LUFS-I: ${m.lufs} | True Peak: ${m.truePeak} dBTP | LRA: ${m.lra} LU | Crest: ${m.crestFactor} dB
+- TT DR: ${m.dr ?? m.dynamicRange} | PLR: ${m.plr ?? "n/a"} dB | PSR: ${m.psr ?? "n/a"} dB${m.clipEvents ? ` | CLIP: ${m.clipEvents} events` : ""}${m.ispOvers ? ` | ISP>-1dBTP: ${m.ispOvers}` : ""}
 - Noise floor: ${m.noiseFloor} dB | Transients: ${m.transientDensity}/s | Punch: ${m.punchScore ?? "n/a"}/100
 - Spectral centroid: ${m.spectralCentroid ?? "n/a"} Hz | Tilt: ${m.spectralTilt ?? "n/a"} dB/oct
 - Bands %: Sub ${m.frequencyBalance.sub} | Bass ${m.frequencyBalance.bass} | Mid ${m.frequencyBalance.mid} | HiMid ${m.frequencyBalance.highMid} | Air ${m.frequencyBalance.air}

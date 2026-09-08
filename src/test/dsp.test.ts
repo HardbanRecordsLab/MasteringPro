@@ -3,6 +3,7 @@ import { measureLoudness, measureTruePeak } from '@/lib/loudness';
 import { FFT, hann } from '@/lib/fft';
 import { analyzeSpectrum } from '@/lib/spectrum';
 import { limiterLatencySamples } from '@/lib/limiterConfig';
+import { computeDynamicsMetrics } from '@/lib/dynamicsMetrics';
 
 /** Minimal AudioBuffer stand-in for the pure DSP functions. */
 function fakeBuffer(channels: Float32Array[], sampleRate: number): AudioBuffer {
@@ -102,6 +103,32 @@ describe('limiter latency', () => {
     const lat = limiterLatencySamples(48000);
     expect(lat).toBeGreaterThan(200);
     expect(lat).toBeLessThan(320);
+  });
+});
+
+describe('dynamics metrics', () => {
+  it('TT DR: low for a steady sine, high when peaks stick out above RMS', () => {
+    const steady = sine(1000, -0.5, SR, 12);
+    const bS = fakeBuffer([steady, steady.slice()], SR);
+    expect(computeDynamicsMetrics(bS, measureLoudness(bS)).dr).toBeLessThanOrEqual(3);
+
+    // low-level tone + periodic sharp spikes → high crest → high DR
+    const n = SR * 12;
+    const peaky = new Float32Array(n);
+    for (let i = 0; i < n; i++) peaky[i] = 0.03 * Math.sin((2 * Math.PI * 300 * i) / SR);
+    for (let i = 0; i < n; i += Math.round(SR * 0.5)) peaky[i] = 0.9;
+    const bP = fakeBuffer([peaky, peaky.slice()], SR);
+    expect(computeDynamicsMetrics(bP, measureLoudness(bP)).dr).toBeGreaterThan(12);
+  });
+
+  it('counts clip runs at full scale', () => {
+    const s = new Float32Array(SR);
+    for (let i = 0; i < s.length; i++) s[i] = 0.3 * Math.sin((2 * Math.PI * 200 * i) / SR);
+    for (let i = 1000; i < 1010; i++) s[i] = 1.0; // one 10-sample clip run
+    const buf = fakeBuffer([s, s.slice()], SR);
+    const d = computeDynamicsMetrics(buf, measureLoudness(buf));
+    expect(d.clipEvents).toBe(2); // one per channel
+    expect(d.clippedSamples).toBe(20);
   });
 });
 

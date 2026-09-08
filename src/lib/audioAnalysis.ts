@@ -3,6 +3,7 @@
  */
 
 import { measureLoudness } from './loudness';
+import { computeDynamicsMetrics } from './dynamicsMetrics';
 import { analyzeSpectrum, bandDb, spectralCentroid as specCentroid, spectralTilt as specTilt } from './spectrum';
 
 export interface AudioMetrics {
@@ -40,6 +41,13 @@ export interface AudioMetrics {
   samplePeak: number;              // dBFS
   shortTermMax: number;            // LUFS-S max (3 s)
   momentaryMax: number;            // LUFS-M max (400 ms)
+  // Extra dynamics / integrity
+  dr: number;                      // TT Dynamic Range (DR14)
+  psr: number;                     // Peak to Short-term loudness Ratio (dB)
+  plr: number;                     // Peak to Loudness Ratio (dB)
+  clipEvents: number;
+  clippedSamples: number;
+  ispOvers: number;                // inter-sample peaks over -1 dBTP
 }
 
 
@@ -241,6 +249,7 @@ export function analyzeAudio(buffer: AudioBuffer): AudioMetrics {
     samplePeak: loud.samplePeak,
     shortTermMax: loud.shortTermMax,
     momentaryMax: loud.momentaryMax,
+    ...computeDynamicsMetrics(buffer, loud),
 
     mudIndex,
     harshnessIndex,

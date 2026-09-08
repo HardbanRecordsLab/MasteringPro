@@ -16,8 +16,8 @@ function clamp(v: number, lo = 0, hi = 100) {
 const QualityScore = () => {
   const { state } = useAudio();
 
-  const { overall, rows } = useMemo(() => {
-    if (!state.audioBuffer) return { overall: 0, rows: [] as ScoreRow[] };
+  const { overall, rows, m } = useMemo(() => {
+    if (!state.audioBuffer) return { overall: 0, rows: [] as ScoreRow[], m: null as ReturnType<typeof analyzeAudio> | null };
     const m = analyzeAudio(state.audioBuffer);
 
     // Dynamics: DR 6→50, DR 14+→100
@@ -53,7 +53,7 @@ const QualityScore = () => {
     ];
 
     const overall = clamp((dynamics + stereo + bass + loudness + clarity + streaming) / 6);
-    return { overall, rows };
+    return { overall, rows, m };
   }, [state.audioBuffer]);
 
   if (!state.audioBuffer) return null;
@@ -113,6 +113,35 @@ const QualityScore = () => {
           </div>
         ))}
       </div>
+
+      {m && (
+        <div className="pt-2 border-t border-border/50 space-y-1.5">
+          <div className="grid grid-cols-3 gap-1.5 text-center">
+            {[
+              ['LUFS-I', m.lufs.toFixed(1)],
+              ['True Peak', `${m.truePeak.toFixed(1)}`],
+              ['LRA', `${m.lra.toFixed(1)}`],
+              ['DR', `${m.dr}`],
+              ['PSR', `${m.psr.toFixed(1)}`],
+              ['PLR', `${m.plr.toFixed(1)}`],
+            ].map(([l, v]) => (
+              <div key={l} className="inset-well py-1">
+                <div className="font-mono-display text-xs text-primary">{v}</div>
+                <div className="text-[7px] uppercase tracking-wider text-muted-foreground">{l}</div>
+              </div>
+            ))}
+          </div>
+          {(m.clipEvents > 0 || m.ispOvers > 0) && (
+            <div className="text-[9px] font-mono text-destructive flex flex-wrap gap-x-3">
+              {m.clipEvents > 0 && <span>⚠ {m.clipEvents} clip events ({m.clippedSamples} samples)</span>}
+              {m.ispOvers > 0 && <span>⚠ {m.ispOvers} inter-sample peaks &gt; −1 dBTP</span>}
+            </div>
+          )}
+          <p className="text-[8px] text-muted-foreground leading-snug">
+            DR = TT Dynamic Range · PSR/PLR = peak vs short-term / integrated loudness — under ~6 means heavily compressed.
+          </p>
+        </div>
+      )}
     </div>
   );
 };
