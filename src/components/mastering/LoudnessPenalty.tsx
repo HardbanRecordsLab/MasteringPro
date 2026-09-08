@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Gauge, Loader2, RefreshCw } from 'lucide-react';
+import { Gauge, Loader2, RefreshCw, Lightbulb } from 'lucide-react';
 import { useAudio } from '@/contexts/AudioContext';
 import { renderProcessed } from '@/lib/offlineRender';
 import { measureLoudness } from '@/lib/loudness';
@@ -23,10 +23,56 @@ interface Measured {
   lra: number;
 }
 
+interface Advice {
+  kind: 'warn' | 'tip' | 'ok';
+  text: string;
+}
+
+/** Rule-based loudness advisor — plain-language next steps from the measured master. */
+export function adviseLoudness(m: Measured, target: { name: string; lufs: number; tp: number }): Advice[] {
+  const out: Advice[] = [];
+  const over = m.lufs - target.lufs;
+
+  if (m.tp > target.tp + 0.05) {
+    out.push({
+      kind: 'warn',
+      text: `True peak ${m.tp.toFixed(1)} dBTP is above ${target.name}'s ${target.tp} dBTP ceiling. Lower the limiter ceiling to ${target.tp.toFixed(1)} (−1.5 if you also make a lossy/MP3 version).`,
+    });
+  }
+  if (over > 1.5) {
+    out.push({
+      kind: 'tip',
+      text: `${over.toFixed(1)} LU louder than ${target.name} — it will be turned down by that much on playback, so the extra limiting buys nothing there. Ease the limiter or input drive unless you also deliver an un-normalised (DJ/download) master.`,
+    });
+  } else if (over < -1.5) {
+    out.push({
+      kind: 'tip',
+      text: `${(-over).toFixed(1)} LU quieter than ${target.name}. You have loudness headroom — push input drive or the limiter if the material stays clean.`,
+    });
+  }
+  if (m.lra > 11) {
+    out.push({
+      kind: 'tip',
+      text: `LRA ${m.lra.toFixed(1)} LU is wide for streaming — level will jump between sections/songs. A gentle 1.5:1 bus compressor or a slower multiband release evens it out.`,
+    });
+  } else if (m.lra < 3 && m.lufs > -10) {
+    out.push({
+      kind: 'warn',
+      text: `LRA ${m.lra.toFixed(1)} LU at ${m.lufs.toFixed(1)} LUFS — heavily limited. Listen for pumping/distortion and consider backing off 1–2 dB for a more open master.`,
+    });
+  }
+  if (out.length === 0) {
+    out.push({ kind: 'ok', text: `Master sits within spec for ${target.name}. Nothing urgent.` });
+  }
+  return out;
+}
+
 const LoudnessPenalty = () => {
   const { state, processing } = useAudio();
   const [busy, setBusy] = useState(false);
   const [m, setM] = useState<Measured | null>(null);
+  const [primary, setPrimary] = useState('Spotify');
+  const primaryTarget = TARGETS.find((t) => t.name === primary) ?? TARGETS[0];
 
   const measure = async () => {
     if (!state.audioBuffer) return;
@@ -110,6 +156,36 @@ const LoudnessPenalty = () => {
             quieter. Aim for the target of your main platform; louder only wins on
             un-normalised playback (DJ, download).
           </p>
+
+          <div className="mt-3 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                <Lightbulb className="w-3 h-3 text-primary" /> Advisor
+              </span>
+              <select
+                value={primary}
+                onChange={(e) => setPrimary(e.target.value)}
+                className="bg-background border border-border rounded-sm text-[10px] px-1 py-0.5 text-foreground focus:outline-none focus:border-primary/50"
+              >
+                {TARGETS.map((t) => (
+                  <option key={t.name} value={t.name}>{t.name}</option>
+                ))}
+              </select>
+            </div>
+            <ul className="space-y-1">
+              {adviseLoudness(m, primaryTarget).map((a, i) => (
+                <li
+                  key={i}
+                  className={`text-[10px] leading-snug flex gap-1.5 ${
+                    a.kind === 'warn' ? 'text-warning' : a.kind === 'ok' ? 'text-meter-green' : 'text-foreground'
+                  }`}
+                >
+                  <span className="shrink-0">{a.kind === 'warn' ? '⚠' : a.kind === 'ok' ? '✓' : '→'}</span>
+                  <span>{a.text}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </>
       )}
     </div>
