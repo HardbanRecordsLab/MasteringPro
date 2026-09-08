@@ -281,7 +281,7 @@ Return JSON:
       style,
       intensity,
       validation: validationReport,
-      refinement: isRefinement || undefined,
+      refinement: isRefinement ? true : undefined,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
