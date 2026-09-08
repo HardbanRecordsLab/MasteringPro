@@ -1,12 +1,9 @@
 # Deployment guide — Frontend on Vercel, Backend on a VPS
 
-> **Deploying on the HBRL VPS (`hbrl-prod`, `84.247.162.167`)?** Host nginx +
-> certbot already terminate TLS there. Skip the Caddy parts below and use
-> `docker-compose.vps.yml` (API container on `127.0.0.1:8787`) with an nginx
-> vhost for `api.masteringpro.hardbanrecordslab.online`. The full
-> server-specific runbook lives in `HBRL-VPS/VPS-ACTION-PLAN.md` →
-> "Wdrożenie MasterPRO". The frontend domain is
-> `masteringpro.hardbanrecordslab.online` (CNAME to Vercel).
+> **Deploying on the HBRL VPS?** Use **[DEPLOY.md](DEPLOY.md)** — the canonical
+> all-on-VPS runbook (static frontend + API container + `hbrl-postgres`, one
+> `./deploy/vps-deploy.sh`). This file below is the generic Vercel-frontend /
+> standalone-API-host alternative.
 
 This walks through a generic production deploy from zero (standalone API host).
 
