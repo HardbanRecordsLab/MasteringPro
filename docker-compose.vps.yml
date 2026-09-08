@@ -1,0 +1,42 @@
+# ============================================================================
+#  MasteringPro API — deploy variant for the HBRL VPS (hbrl-prod).
+#
+#  The VPS already terminates TLS with the host nginx + certbot, so this stack
+#  runs ONLY the API container, published on loopback. nginx reverse-proxies
+#  api.masteringpro.hardbanrecordslab.online -> 127.0.0.1:8787.
+#
+#  Use this instead of docker-compose.yml (which bundles Caddy) on that server.
+#
+#    cd /opt/masteringpro
+#    cp server/.env.example server/.env   # set AI_API_KEY, ALLOWED_ORIGINS, DATABASE_URL
+#    docker compose -f docker-compose.vps.yml up -d --build
+#    curl -s http://127.0.0.1:8787/health          # {"ok":true,"db":true,...}
+#
+#  Database (per HBRL-VPS/DB-POLICY.md): one-off, on the VPS —
+#    docker exec -e PGPASSWORD=$PW hbrl-postgres \
+#      psql -U hbrl_admin -d postgres -c "CREATE DATABASE masteringpro OWNER hbrl_admin;"
+#  then set DATABASE_URL=postgresql://hbrl_admin:$PW@hbrl-postgres:5432/masteringpro
+#  (migrations run automatically on container start). Add `masteringpro` to
+#  /root/vps-scripts/db-backup-all.sh.
+#
+#  nginx vhost + certbot: see HBRL-VPS/VPS-ACTION-PLAN.md "Wdrożenie MasterPRO".
+# ============================================================================
+
+services:
+  api:
+    build: ./server
+    restart: unless-stopped
+    env_file: ./server/.env
+    environment:
+      PORT: "8787"
+      TRUST_PROXY: "true"
+      NODE_ENV: "production"
+    ports:
+      - "127.0.0.1:8787:8787"   # loopback only — host nginx exposes it over TLS
+    networks:
+      - default
+      - hbrl-db                 # shared network to reach the hbrl-postgres container
+
+networks:
+  hbrl-db:
+    external: true

@@ -1,0 +1,8 @@
+# Backend + VPS deploy files — not part of the Vercel frontend build
+server
+deploy
+Caddyfile
+docker-compose.yml
+docker-compose.vps.yml
+DEPLOYMENT.md
+HBRL-VPS

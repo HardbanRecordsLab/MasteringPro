@@ -1,0 +1,25 @@
+# MasteringPro API reverse proxy — automatic HTTPS via Let's Encrypt.
+# {$API_DOMAIN} and {$ACME_EMAIL} come from docker-compose environment.
+#
+# NOTE: on the HBRL VPS, host nginx + certbot already terminate TLS — deploy
+# with docker-compose.vps.yml there, not this file. This is for a standalone host.
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+
+	# Basic hardening
+	header {
+		-Server
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Content-Type-Options "nosniff"
+	}
+
+	reverse_proxy api:8787 {
+		health_uri /health
+		health_interval 30s
+	}
+}

@@ -1,0 +1,49 @@
+# ============================================================================
+#  MasterPRO — VPS stack: Node API behind Caddy (automatic HTTPS).
+#
+#  Setup on the VPS:
+#    1.  cp .env.example .env                 # set API_DOMAIN + ACME_EMAIL
+#    2.  cp server/.env.example server/.env   # set AI_API_KEY, ALLOWED_ORIGINS
+#    3.  docker compose up -d --build
+#
+#  Point an A/AAAA DNS record for API_DOMAIN at this server BEFORE step 3 so
+#  Caddy can issue the TLS certificate.
+# ============================================================================
+
+services:
+  api:
+    build: ./server
+    restart: unless-stopped
+    env_file: ./server/.env
+    environment:
+      PORT: 8787
+      TRUST_PROXY: "true"
+    expose:
+      - "8787"
+    networks:
+      - web
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    networks:
+      - web
+
+networks:
+  web:
+
+volumes:
+  caddy_data:
+  caddy_config:
