@@ -77,6 +77,9 @@ class SpectralChannel {
     this.re = new Float32Array(WIN);
     this.im = new Float32Array(WIN);
     this.binGainDb = new Float32Array(HALF + 1); // per-bin smoothed reduction (<=0)
+    this.magDb = new Float32Array(HALF + 1);     // scratch, reused every frame
+    this.pre = new Float64Array(HALF + 2);       // scratch prefix sum
+    this.tgt = new Float32Array(HALF + 1);       // scratch per-bin target cut (dB)
     this.deepestDb = 0;
   }
 
@@ -103,14 +106,15 @@ class SpectralChannel {
     fft(re, im, false);
 
     // magnitude (dB) for the lower half
-    const magDb = new Float32Array(HALF + 1);
+    const magDb = this.magDb;
     for (let k = 0; k <= HALF; k++) {
       const m = Math.hypot(re[k], im[k]) + 1e-12;
       magDb[k] = 20 * Math.log10(m);
     }
 
     // 1/3-octave running mean of magDb via a prefix sum → reference envelope
-    const pre = new Float64Array(HALF + 2);
+    const pre = this.pre;
+    pre[0] = 0;
     for (let k = 0; k <= HALF; k++) pre[k + 1] = pre[k] + magDb[k];
     const binHz = sr / WIN;
     const RATIO = Math.pow(2, 1 / 6); // half of a 1/3-octave, each side
@@ -126,20 +130,39 @@ class SpectralChannel {
     const atk = Math.exp(-HOP / (sr * Math.max(0.001, p.attack * 0.001)));
     const rel = Math.exp(-HOP / (sr * Math.max(0.001, p.release * 0.001)));
 
-    let deepest = 0;
+    // pass 1 — raw per-bin target cut (dB) from the envelope excess
+    const tgt = this.tgt;
+    tgt[0] = 0;
     for (let k = 1; k <= HALF; k++) {
-      let target = 0;
+      let t = 0;
       if (p.enabled && k >= loBin && k <= hiBin) {
         const a = Math.max(0, Math.floor(k / RATIO));
         const b = Math.min(HALF, Math.ceil(k * RATIO));
         const refDb = (pre[b + 1] - pre[a]) / (b - a + 1);
         const excess = magDb[k] - refDb - thr;
-        if (excess > 0) target = Math.max(maxCut, -excess * strength);
+        if (excess > 0) t = Math.max(maxCut, -excess * strength);
       }
+      tgt[k] = t;
+    }
+
+    // pass 2 — smooth the target across frequency (5-tap triangular) so a
+    // single bin never gets a hole punched next to an untouched neighbour
+    // (that mismatch is what makes STFT suppressors "chirp"). In place is fine
+    // reading forward because the kernel only looks back 2 bins via magDb-free
+    // temporaries.
+    let m2 = tgt[1], m1 = tgt[1];
+    let deepest = 0;
+    for (let k = 1; k <= HALF; k++) {
+      const cur = tgt[k];
+      const nx1 = k + 1 <= HALF ? tgt[k + 1] : cur;
+      const nx2 = k + 2 <= HALF ? tgt[k + 2] : nx1;
+      const smoothed = (m2 + 2 * m1 + 3 * cur + 2 * nx1 + nx2) / 9;
+      m2 = m1; m1 = cur;
+
       // ballistics: fast toward a deeper cut, slow to recover
       const prev = this.binGainDb[k];
-      const coef = target < prev ? atk : rel;
-      const g = target + (prev - target) * coef;
+      const coef = smoothed < prev ? atk : rel;
+      const g = smoothed + (prev - smoothed) * coef;
       this.binGainDb[k] = g;
       if (g < deepest) deepest = g;
 
