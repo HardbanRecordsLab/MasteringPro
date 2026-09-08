@@ -55,6 +55,7 @@ export function loadMasteringWorklets(ctx: AudioContext): Promise<void> {
       ctx.audioWorklet.addModule('/worklets/multiband-comp-processor.js'),
       ctx.audioWorklet.addModule('/worklets/dynamics-eq-processor.js'),
       ctx.audioWorklet.addModule('/worklets/compressor-processor.js'),
+      ctx.audioWorklet.addModule('/worklets/bass-mono-processor.js'),
       ctx.audioWorklet.addModule('/worklets/lookahead-limiter-processor.js'),
     ]).then(() => undefined);
   }
@@ -85,6 +86,15 @@ export class MasteringEngine {
 
   // Processing nodes
   inputGainNode: GainNode;
+  lowCutNode: BiquadFilterNode;      // subsonic high-pass
+  tiltLowNode: BiquadFilterNode;     // spectral-tilt low shelf
+  tiltHighNode: BiquadFilterNode;    // spectral-tilt high shelf
+  bassMonoNode: AudioWorkletNode | null = null;
+  bassMonoWet: GainNode;
+  bassMonoDry: GainNode;
+  bassMonoInputBus: GainNode;
+  bassMonoOutputBus: GainNode;
+  private _bassMonoFreq = 120;
   eqNodes: BiquadFilterNode[];
   compressorNode: DynamicsCompressorNode;
   makeupGainNode: GainNode;
@@ -171,6 +181,28 @@ export class MasteringEngine {
 
     // Input gain
     this.inputGainNode = ctx.createGain();
+
+    // Subsonic low-cut (transparent when disabled: freq → 10 Hz)
+    this.lowCutNode = ctx.createBiquadFilter();
+    this.lowCutNode.type = 'highpass';
+    this.lowCutNode.frequency.value = 10;
+    this.lowCutNode.Q.value = 0.707;
+
+    // Spectral tilt = low shelf down + high shelf up (or vice-versa), 1 knob
+    this.tiltLowNode = ctx.createBiquadFilter();
+    this.tiltLowNode.type = 'lowshelf';
+    this.tiltLowNode.frequency.value = 500;
+    this.tiltHighNode = ctx.createBiquadFilter();
+    this.tiltHighNode.type = 'highshelf';
+    this.tiltHighNode.frequency.value = 500;
+
+    // Bass mono-maker wet/dry buses
+    this.bassMonoInputBus = ctx.createGain();
+    this.bassMonoOutputBus = ctx.createGain();
+    this.bassMonoWet = ctx.createGain();
+    this.bassMonoDry = ctx.createGain();
+    this.bassMonoWet.gain.value = 0;
+    this.bassMonoDry.gain.value = 1;
 
     // Noise gate wet/dry buses (worklet inserted later in attachWorklets)
     this.noiseGateInputBus = ctx.createGain();
@@ -380,6 +412,19 @@ export class MasteringEngine {
         console.warn('[engine] lookahead limiter worklet not available', err);
       }
     }
+    if (!this.bassMonoNode) {
+      try {
+        this.bassMonoNode = new AudioWorkletNode(this.ctx, 'bass-mono-processor', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+          processorOptions: { freq: this._bassMonoFreq },
+        });
+        this.bassMonoInputBus.connect(this.bassMonoNode);
+        this.bassMonoNode.connect(this.bassMonoWet);
+        this.bassMonoWet.connect(this.bassMonoOutputBus);
+      } catch (err) {
+        console.warn('[engine] bass-mono worklet not available', err);
+      }
+    }
   }
 
   private createEQ(type: BiquadFilterType, freq: number, gain: number, q: number): BiquadFilterNode {
@@ -392,8 +437,9 @@ export class MasteringEngine {
   }
 
   private buildChain() {
-    // inputGain → noiseGate bus (wet path is wired in attachWorklets, dry path always present)
-    this.inputGainNode.connect(this.noiseGateInputBus);
+    // inputGain → low-cut → noiseGate bus
+    this.inputGainNode.connect(this.lowCutNode);
+    this.lowCutNode.connect(this.noiseGateInputBus);
     this.noiseGateInputBus.connect(this.noiseGateDry);
     this.noiseGateDry.connect(this.noiseGateOutputBus);
 
@@ -403,8 +449,14 @@ export class MasteringEngine {
       this.eqNodes[i].connect(this.eqNodes[i + 1]);
     }
 
-    // EQ → midSide bus
-    this.eqNodes[this.eqNodes.length - 1].connect(this.midSideInputBus);
+    // EQ → tilt → bass-mono bus → midSide bus
+    this.eqNodes[this.eqNodes.length - 1].connect(this.tiltLowNode);
+    this.tiltLowNode.connect(this.tiltHighNode);
+    this.tiltHighNode.connect(this.bassMonoInputBus);
+    this.bassMonoInputBus.connect(this.bassMonoDry);
+    this.bassMonoDry.connect(this.bassMonoOutputBus);
+
+    this.bassMonoOutputBus.connect(this.midSideInputBus);
     this.midSideInputBus.connect(this.midSideDry);
     this.midSideDry.connect(this.midSideOutputBus);
 
@@ -488,6 +540,27 @@ export class MasteringEngine {
     if (params.gain !== undefined) this.ramp(node.gain, params.gain);
     if (params.q !== undefined) this.ramp(node.Q, params.q);
     if (params.type !== undefined) node.type = params.type;
+  }
+
+  /** Subsonic low-cut. Disabled → highpass parks at 10 Hz (transparent). */
+  setLowCut(enabled: boolean, freq: number) {
+    this.ramp(this.lowCutNode.frequency, enabled ? Math.max(10, freq) : 10);
+  }
+
+  /** Spectral tilt: +amount = brighter (low shelf down, high shelf up). */
+  setTilt(enabled: boolean, amount: number) {
+    const a = enabled ? amount : 0;
+    this.ramp(this.tiltLowNode.gain, -a);
+    this.ramp(this.tiltHighNode.gain, a);
+  }
+
+  setBassMono(enabled: boolean, freq: number) {
+    this._bassMonoFreq = freq;
+    this.bassMonoNode?.port.postMessage({ freq });
+    const t = this.ctx.currentTime;
+    const wet = enabled && this.bassMonoNode ? 1 : 0;
+    this.bassMonoWet.gain.setTargetAtTime(wet, t, 0.005);
+    this.bassMonoDry.gain.setTargetAtTime(1 - wet, t, 0.005);
   }
 
   bypassEQ(bypass: boolean) {

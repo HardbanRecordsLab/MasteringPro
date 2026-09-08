@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useAudio, type ProcessingParams } from '@/contexts/AudioContext';
 import { analyzeAudio } from '@/lib/audioAnalysis';
+import { aiConfigToParams } from '@/lib/aiConfigMap';
 import { invokeAI } from '@/lib/aiApi';
 import { encodeWav, downloadBlob, renderMaster } from '@/lib/audioExport';
 import { saveLastAISettings } from '@/lib/aiMasteringPresets';
@@ -51,31 +52,13 @@ const OneClickMaster = () => {
     setProgress(s.to);
   };
 
-  const applyAIConfig = (config: any): ProcessingParams => {
+  const applyAIConfig = (config: Record<string, unknown>): ProcessingParams => {
     const next: ProcessingParams = {
       ...processing,
-      inputGain: config.inputGain ?? processing.inputGain,
-      eqBands: config.parametricEQ?.map((eq: any, i: number) => ({
-        freq: eq.freq ?? processing.eqBands[i]?.freq ?? 1000,
-        gain: eq.gain ?? 0,
-        q: eq.q ?? 1,
-        type: (eq.type === 'lowShelf' ? 'lowshelf' : eq.type === 'highShelf' ? 'highshelf' : 'peaking') as BiquadFilterType,
-      })) ?? processing.eqBands,
-      compThreshold: config.compressor?.threshold ?? processing.compThreshold,
-      compRatio: config.compressor?.ratio ?? processing.compRatio,
-      compAttack: config.compressor?.attack ?? processing.compAttack,
-      compRelease: config.compressor?.release ?? processing.compRelease,
-      compKnee: config.compressor?.knee ?? processing.compKnee,
-      compMakeup: config.compressor?.makeupGain ?? processing.compMakeup,
-      stereoWidth: config.stereoWidth ?? processing.stereoWidth,
-      limiterCeiling: config.limiter?.ceiling ?? processing.limiterCeiling,
-      limiterRelease: config.limiter?.release ?? processing.limiterRelease,
-      saturation: typeof config.saturation === 'number' ? config.saturation : processing.saturation,
-      saturationEnabled: typeof config.saturation === 'number' && config.saturation > 0,
+      ...aiConfigToParams(config, processing),
       eqEnabled: true,
       compEnabled: true,
       limiterEnabled: true,
-      widthEnabled: true,
     };
     setProcessing(next);
     return next;

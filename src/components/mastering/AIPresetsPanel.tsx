@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAudio } from '@/contexts/AudioContext';
 import { analyzeAudio, type AudioMetrics } from '@/lib/audioAnalysis';
+import { aiConfigToParams } from '@/lib/aiConfigMap';
 import { invokeAI } from '@/lib/aiApi';
 import { toast } from 'sonner';
 import { loadAIPresets, saveAIPresets, loadLastAISettings, saveLastAISettings, type AIMasteringPreset } from '@/lib/aiMasteringPresets';
@@ -73,7 +74,7 @@ const AIPresetsPanel = () => {
   const [platform, setPlatform] = useState('spotify');
   const [style, setStyle] = useState('transparent');
   const [intensity, setIntensity] = useState('standard');
-  const [validation, setValidation] = useState<any>(null);
+  const [validation, setValidation] = useState<{ violations?: string[]; predictedLufs?: number; predictedTruePeak?: number; [k: string]: unknown } | null>(null);
   const [showAB, setShowAB] = useState(false);
   const [aiPresets, setAiPresets] = useState<AIMasteringPreset[]>([]);
   const [newPresetName, setNewPresetName] = useState('');
@@ -137,31 +138,13 @@ const AIPresetsPanel = () => {
     persistPresets(aiPresets.filter(p => p.id !== id));
   };
 
-  const applyAIConfig = (config: any) => {
+  const applyAIConfig = (config: Record<string, unknown>) => {
     setProcessing(prev => ({
       ...prev,
-      inputGain: config.inputGain ?? prev.inputGain,
-      eqBands: config.parametricEQ?.map((eq: any, i: number) => ({
-        freq: eq.freq ?? prev.eqBands[i]?.freq ?? 1000,
-        gain: eq.gain ?? 0,
-        q: eq.q ?? 1,
-        type: (eq.type === 'lowShelf' ? 'lowshelf' : eq.type === 'highShelf' ? 'highshelf' : 'peaking') as BiquadFilterType,
-      })) ?? prev.eqBands,
-      compThreshold: config.compressor?.threshold ?? prev.compThreshold,
-      compRatio: config.compressor?.ratio ?? prev.compRatio,
-      compAttack: config.compressor?.attack ?? prev.compAttack,
-      compRelease: config.compressor?.release ?? prev.compRelease,
-      compKnee: config.compressor?.knee ?? prev.compKnee,
-      compMakeup: config.compressor?.makeupGain ?? prev.compMakeup,
-      stereoWidth: config.stereoWidth ?? prev.stereoWidth,
-      limiterCeiling: config.limiter?.ceiling ?? prev.limiterCeiling,
-      limiterRelease: config.limiter?.release ?? prev.limiterRelease,
-      saturation: typeof config.saturation === 'number' ? config.saturation : prev.saturation,
-      saturationEnabled: typeof config.saturation === 'number' && config.saturation > 0 ? true : prev.saturationEnabled,
+      ...aiConfigToParams(config, prev),
       eqEnabled: true,
       compEnabled: true,
       limiterEnabled: true,
-      widthEnabled: true,
     }));
   };
 

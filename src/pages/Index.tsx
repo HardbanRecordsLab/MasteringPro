@@ -10,6 +10,7 @@ import WaveformDisplay from '@/components/mastering/WaveformDisplay';
 import TransportControls from '@/components/mastering/TransportControls';
 import {
   InputGainModule,
+  UtilityModule,
   NoiseGateModule,
   ParametricEQModule,
   DeEsserModule,
@@ -139,6 +140,7 @@ const MasteringApp = () => {
 
             <TabsContent value="input" className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-0">
               <InputGainModule />
+              <UtilityModule />
               <NoiseGateModule />
             </TabsContent>
 

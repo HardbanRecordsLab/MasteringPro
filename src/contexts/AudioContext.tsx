@@ -21,6 +21,12 @@ export interface EQBandParams {
 
 export interface ProcessingParams {
   inputGain: number;
+  lowCutEnabled: boolean;
+  lowCutFreq: number;
+  tiltEnabled: boolean;
+  tiltAmount: number;
+  bassMonoEnabled: boolean;
+  bassMonoFreq: number;
   eqEnabled: boolean;
   eqBands: EQBandParams[];
   compEnabled: boolean;
@@ -75,6 +81,12 @@ export interface ProcessingParams {
 
 const DEFAULT_PROCESSING: ProcessingParams = {
   inputGain: 0,
+  lowCutEnabled: false,
+  lowCutFreq: 30,
+  tiltEnabled: false,
+  tiltAmount: 0,
+  bassMonoEnabled: false,
+  bassMonoFreq: 120,
   eqEnabled: true,
   eqBands: [
     { freq: 80, gain: 0, q: 0.7, type: 'lowshelf' },
@@ -269,6 +281,9 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (!engine) return;
 
     engine.setInputGain(p.inputGain);
+    engine.setLowCut(p.lowCutEnabled, p.lowCutFreq);
+    engine.setTilt(p.tiltEnabled, p.tiltAmount);
+    engine.setBassMono(p.bassMonoEnabled, p.bassMonoFreq);
 
     // Noise gate (worklet)
     engine.setNoiseGate({

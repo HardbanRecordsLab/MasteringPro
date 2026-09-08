@@ -104,6 +104,15 @@ function enforceSafety(configObj, platform) {
   }
   configObj.stereoWidth = Math.max(0, Math.min(200, Number(configObj.stereoWidth) || 100));
   configObj.inputGain = Math.max(-24, Math.min(24, Number(configObj.inputGain) || 0));
+  if (configObj.lowCut) {
+    configObj.lowCut.freq = Math.max(12, Math.min(200, Number(configObj.lowCut.freq) || 30));
+  }
+  if (configObj.tilt !== undefined) {
+    configObj.tilt = Math.max(-6, Math.min(6, Number(configObj.tilt) || 0));
+  }
+  if (configObj.bassMono) {
+    configObj.bassMono.freq = Math.max(40, Math.min(300, Number(configObj.bassMono.freq) || 120));
+  }
   configObj.targetLUFS = platform.lufs;
   return configObj;
 }
@@ -175,6 +184,9 @@ export async function aiMasteringHandler(c) {
   "limiter": {"ceiling": number (dBFS), "release": number (ms)},
   "targetLUFS": number,
   "saturation": number (0-100, optional),
+  "lowCut": {"freq": number (12-200, subsonic high-pass)} (optional, if sub-20Hz rumble or muddy sub),
+  "tilt": number (-6..+6 dB, optional; negative = darker, positive = brighter — use for broad tonal correction),
+  "bassMono": {"freq": number (40-300)} (optional, if low-end mono compat < 0.5),
   "deEsserHint": {"freq": number, "amount": number} (optional, if sibilance > -30 dBFS)
 }`;
 

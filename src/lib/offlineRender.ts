@@ -34,6 +34,7 @@ const WORKLET_URLS = [
   '/worklets/multiband-comp-processor.js',
   '/worklets/dynamics-eq-processor.js',
   '/worklets/compressor-processor.js',
+  '/worklets/bass-mono-processor.js',
   '/worklets/lookahead-limiter-processor.js',
 ];
 
@@ -68,6 +69,16 @@ export async function renderProcessed(
   source.connect(input);
   let node: AudioNode = input;
 
+  // Subsonic low-cut
+  if (p.lowCutEnabled) {
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = Math.max(10, p.lowCutFreq);
+    hp.Q.value = 0.707;
+    node.connect(hp);
+    node = hp;
+  }
+
   // Noise gate (worklet)
   if (hasWorklets && p.gateEnabled) {
     try {
@@ -96,6 +107,29 @@ export async function renderProcessed(
       f.Q.value = band.q;
       node.connect(f);
       node = f;
+    }
+  }
+
+  // Spectral tilt (low shelf down + high shelf up, both at 500 Hz)
+  if (p.tiltEnabled && p.tiltAmount !== 0) {
+    const lo = ctx.createBiquadFilter();
+    lo.type = 'lowshelf'; lo.frequency.value = 500; lo.gain.value = -p.tiltAmount;
+    const hi = ctx.createBiquadFilter();
+    hi.type = 'highshelf'; hi.frequency.value = 500; hi.gain.value = p.tiltAmount;
+    node.connect(lo); lo.connect(hi); node = hi;
+  }
+
+  // Bass mono-maker (worklet)
+  if (hasWorklets && p.bassMonoEnabled) {
+    try {
+      const bm = new AudioWorkletNode(ctx, 'bass-mono-processor', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+        processorOptions: { freq: p.bassMonoFreq },
+      });
+      node.connect(bm);
+      node = bm;
+    } catch (e) {
+      console.warn('[offlineRender] bass-mono skipped', e);
     }
   }
 

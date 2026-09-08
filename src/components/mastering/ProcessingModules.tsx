@@ -546,6 +546,52 @@ const MultibandCompModule = () => {
   );
 };
 
+const UtilityModule = () => {
+  const { processing, setProcessing } = useAudio();
+  const set = (patch: Partial<typeof processing>) => setProcessing((p) => ({ ...p, ...patch }));
+  const pill = (on: boolean) =>
+    `text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded ${on ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground hover:text-foreground'}`;
+
+  return (
+    <ModulePanel title="Utility">
+      <div className="space-y-3">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <button onClick={() => set({ lowCutEnabled: !processing.lowCutEnabled })} className={pill(processing.lowCutEnabled)}>
+              Low-Cut {processing.lowCutEnabled ? 'ON' : 'OFF'}
+            </button>
+            <span className="text-[8px] text-muted-foreground">subsonic rumble</span>
+          </div>
+          <KnobControl label="Freq" value={processing.lowCutFreq} min={12} max={200} step={1} unit="Hz"
+            onChange={(v) => set({ lowCutFreq: v })} />
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <button onClick={() => set({ tiltEnabled: !processing.tiltEnabled })} className={pill(processing.tiltEnabled)}>
+              Tilt {processing.tiltEnabled ? 'ON' : 'OFF'}
+            </button>
+            <span className="text-[8px] text-muted-foreground">− dark · + bright</span>
+          </div>
+          <KnobControl label="Amount" value={processing.tiltAmount} min={-6} max={6} step={0.1} unit="dB"
+            onChange={(v) => set({ tiltAmount: v })} />
+        </div>
+
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <button onClick={() => set({ bassMonoEnabled: !processing.bassMonoEnabled })} className={pill(processing.bassMonoEnabled)}>
+              Bass Mono {processing.bassMonoEnabled ? 'ON' : 'OFF'}
+            </button>
+            <span className="text-[8px] text-muted-foreground">vinyl / club</span>
+          </div>
+          <KnobControl label="Below" value={processing.bassMonoFreq} min={40} max={300} step={5} unit="Hz"
+            onChange={(v) => set({ bassMonoFreq: v })} />
+        </div>
+      </div>
+    </ModulePanel>
+  );
+};
+
 const DeEsserModule = () => {
   const { processing, setProcessing, engine, state } = useAudio();
   const [gr, setGr] = useState({ de: 0, dyn: 0 });
@@ -769,6 +815,7 @@ const LimiterModule = () => {
 
 export {
   InputGainModule,
+  UtilityModule,
   NoiseGateModule,
   ParametricEQModule,
   DeEsserModule,
