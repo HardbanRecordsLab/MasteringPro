@@ -52,12 +52,22 @@ describe('BS.1770-4 loudness', () => {
 
 describe('true peak', () => {
   it('sample peak ~= 0 dBFS, true peak >= sample peak for a hot tone', () => {
-    // 0 dBFS tone at an irrational fraction of SR → inter-sample peaks above samples
     const s = sine(SR * 0.201, 0, SR, 1);
     const { truePeak, samplePeak } = measureTruePeak(fakeBuffer([s, s.slice()], SR));
     expect(samplePeak).toBeLessThan(0.2);
     expect(truePeak).toBeGreaterThanOrEqual(samplePeak - 0.05);
     expect(truePeak).toBeLessThan(1.5);
+  });
+
+  it('recovers the ~3 dB inter-sample peak of an fs/4 +45° tone', () => {
+    // sample peaks land at −3 dBFS, the reconstructed peak is near full scale
+    const n = SR;
+    const d = new Float32Array(n);
+    for (let i = 0; i < n; i++) d[i] = 0.998 * Math.sin((2 * Math.PI * (SR / 4) * i) / SR + Math.PI / 4);
+    const { truePeak, samplePeak } = measureTruePeak(fakeBuffer([d, d.slice()], SR));
+    expect(samplePeak).toBeLessThan(-2.7);
+    expect(truePeak).toBeGreaterThan(-0.3);
+    expect(truePeak).toBeLessThan(0.1);
   });
 });
 
