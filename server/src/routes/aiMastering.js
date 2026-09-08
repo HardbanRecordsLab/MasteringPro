@@ -166,6 +166,10 @@ export async function aiMasteringHandler(c) {
     style = "transparent",
     intensity = "standard",
     validate = true,
+    // closed-loop refinement: the metrics an earlier render actually achieved
+    // + the chain that produced them → the AI corrects its own work
+    achievedMetrics = null,
+    previousConfig = null,
   } = body || {};
 
   if (!metrics) return json({ error: "metrics is required" }, 400);
@@ -183,6 +187,20 @@ export async function aiMasteringHandler(c) {
     userMsg += `\n\nTARGET PLATFORM: ${platformTarget.label} → ${platformTarget.lufs} LUFS-I, true-peak ceiling ${platformTarget.tp} dBFS.`;
     userMsg += `\nMASTERING STYLE: ${String(style).toUpperCase()} — ${styleBrief}`;
     userMsg += `\nINTENSITY: ${String(intensity).toUpperCase()} — ${intensityHint}`;
+
+    const isRefinement = achievedMetrics && previousConfig;
+    if (isRefinement) {
+      userMsg += `\n\n=== REFINEMENT PASS ===
+Your previous chain was rendered. It ACHIEVED:
+${buildMetricsText(achievedMetrics, "ACHIEVED")}
+PREVIOUS CHAIN: ${JSON.stringify(previousConfig)}
+TARGET was ${platformTarget.lufs} LUFS / ${platformTarget.tp} dBTP.
+Return a COMPLETE corrected chain (same JSON shape). Fix the residual gap:
+- if ACHIEVED LUFS is off target by >0.4 LU, adjust limiter ceiling / input drive / compression
+- if harshness / sibilance / mud persist vs SOURCE, deepen the resonanceSuppressor or add a targeted EQ cut
+- if TT DR dropped more than 3 vs SOURCE, ease compression / limiting
+- keep everything that already worked; change only what the ACHIEVED metrics show is still wrong.`;
+    }
     userMsg += `\n\nReturn JSON exactly:
 {
   "presetName": "string (creative, max 4 words)",
@@ -215,9 +233,10 @@ export async function aiMasteringHandler(c) {
     });
     cfg = enforceSafety(cfg, platformTarget);
 
-    // ── STAGE 2 — Validation pass (optional) ──────────────────────────────
+    // ── STAGE 2 — Validation pass (optional; skipped on a refinement pass,
+    //    where we already have real measured metrics) ──────────────────────
     let validationReport = null;
-    if (validate) {
+    if (validate && !isRefinement) {
       try {
         const valUser = `${buildMetricsText(metrics, "SOURCE")}
 
@@ -262,6 +281,7 @@ Return JSON:
       style,
       intensity,
       validation: validationReport,
+      refinement: isRefinement || undefined,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

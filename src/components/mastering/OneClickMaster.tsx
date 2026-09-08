@@ -25,10 +25,11 @@ interface Stage {
 }
 
 const STAGES: Stage[] = [
-  { id: 'analyze', label: 'Analiza audio (LUFS, TP, DR, spektrum)…', from: 0, to: 20 },
-  { id: 'ai',      label: 'AI dobiera łańcuch masteringu…',           from: 20, to: 45 },
-  { id: 'render',  label: 'Offline render przez łańcuch DSP…',        from: 45, to: 85 },
-  { id: 'encode',  label: 'Kodowanie WAV 24-bit…',                    from: 85, to: 97 },
+  { id: 'analyze', label: 'Analiza audio (LUFS, TP, DR, spektrum)…', from: 0, to: 18 },
+  { id: 'ai',      label: 'AI dobiera łańcuch masteringu…',           from: 18, to: 40 },
+  { id: 'render',  label: 'Offline render przez łańcuch DSP…',        from: 40, to: 68 },
+  { id: 'refine',  label: 'AI sprawdza wynik i poprawia łańcuch…',    from: 68, to: 90 },
+  { id: 'encode',  label: 'Kodowanie WAV 24-bit…',                    from: 90, to: 97 },
   { id: 'download',label: 'Przygotowanie pliku do pobrania…',         from: 97, to: 100 },
 ];
 
@@ -87,7 +88,8 @@ const OneClickMaster = () => {
       if (!data?.config) throw new Error('No AI config returned');
       bumpTo('ai');
 
-      const nextProcessing = applyAIConfig(data.config);
+      let nextProcessing = applyAIConfig(data.config);
+      let aiConfig = data.config;
       saveLastAISettings({
         platform: plat.id, style: 'transparent', intensity: 'standard',
         aiConfig: data.config, validation: data.validation || null,
@@ -119,6 +121,54 @@ const OneClickMaster = () => {
         clearInterval(tick);
       }
       bumpTo('render');
+
+      // ── Closed-loop refinement: measure what we actually got, and if it
+      //    still misses the target or crushed the dynamics, let the AI correct
+      //    its own chain once and re-render. ──────────────────────────────────
+      try {
+        const achieved = analyzeAudio(rendered);
+        const missBy = Math.abs(achieved.lufs - plat.lufs);
+        const drCollapse =
+          metrics.dr > 0 && achieved.dr > 0 && metrics.dr - achieved.dr > 4;
+        const harshLeft =
+          metrics.harshnessIndex > 45 && achieved.harshnessIndex > metrics.harshnessIndex - 6;
+
+        if (!report.onTarget || missBy > 0.6 || drCollapse || harshLeft) {
+          setStage('refine');
+          const refined = await invokeAI('ai-mastering', {
+            metrics,
+            platform: plat.id,
+            style: 'transparent',
+            intensity: 'standard',
+            validate: false,
+            achievedMetrics: achieved,
+            previousConfig: aiConfig,
+          });
+          if (refined.data?.config && !refined.error) {
+            const np2 = applyAIConfig(refined.data.config);
+            const res2 = await renderMaster(state.audioBuffer, {
+              processing: np2,
+              targetPeakDb: plat.peak,
+              targetLufs: plat.lufs,
+            });
+            // keep the refinement only if it actually improved the loudness match
+            const better = Math.abs(analyzeAudio(res2.buffer).lufs - plat.lufs);
+            if (better <= missBy + 0.2) {
+              rendered = res2.buffer;
+              report = res2.report;
+              nextProcessing = np2;
+              aiConfig = refined.data.config;
+              saveLastAISettings({
+                platform: plat.id, style: 'transparent', intensity: 'standard',
+                aiConfig, validation: null, processing: nextProcessing,
+              });
+            }
+          }
+          bumpTo('refine');
+        }
+      } catch (e) {
+        console.warn('[OneClick] refinement pass skipped', e);
+      }
 
       setStage('encode');
       await new Promise(r => setTimeout(r, 30));
@@ -212,7 +262,7 @@ const OneClickMaster = () => {
           </div>
 
           {/* Stage timeline */}
-          <div className="grid grid-cols-5 gap-0.5">
+          <div className="grid grid-cols-6 gap-0.5">
             {STAGES.map(s => {
               const isDone = progress >= s.to || done;
               const isActive = stageId === s.id && !done;
