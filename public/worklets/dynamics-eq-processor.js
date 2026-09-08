@@ -16,13 +16,22 @@
  */
 
 class BP {
-  // simple state-variable bandpass, used for detection / de-ess split
-  constructor() { this.lp = 0; this.bp = 0; this.f = 0; this.q = 1; }
+  // simple state-variable bandpass, used for detection / de-ess split.
+  // f/q slew toward their targets (~5 ms) so frequency drags don't click.
+  constructor() {
+    this.lp = 0; this.bp = 0;
+    this.f = 0; this.q = 1; this.tf = 0; this.tq = 1;
+    this.first = true;
+    this.k = 1 - Math.exp(-1 / (sampleRate * 0.005));
+  }
   set(sr, freq, q) {
-    this.f = 2 * Math.sin((Math.PI * Math.min(freq, sr * 0.45)) / sr);
-    this.q = 1 / Math.max(0.5, q);
+    this.tf = 2 * Math.sin((Math.PI * Math.min(freq, sr * 0.45)) / sr);
+    this.tq = 1 / Math.max(0.5, q);
+    if (this.first) { this.f = this.tf; this.q = this.tq; this.first = false; }
   }
   process(x) {
+    this.f += (this.tf - this.f) * this.k;
+    this.q += (this.tq - this.q) * this.k;
     this.lp += this.f * this.bp;
     const hp = x - this.lp - this.q * this.bp;
     this.bp += this.f * hp;

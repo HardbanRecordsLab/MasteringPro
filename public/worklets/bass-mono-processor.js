@@ -12,19 +12,29 @@ class LR2 {
   constructor(type) {
     this.type = type;
     this.b0 = 1; this.b1 = 0; this.b2 = 0; this.a1 = 0; this.a2 = 0;
+    this.tb0 = 1; this.tb1 = 0; this.tb2 = 0; this.ta1 = 0; this.ta2 = 0;
     this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0;
+    this.first = true;
+    this.k = 1 - Math.exp(-1 / (sampleRate * 0.005)); // ~5 ms slew
   }
   set(sr, f) {
     const w0 = (2 * Math.PI * Math.min(f, sr * 0.45)) / sr;
     const c = Math.cos(w0);
     const alpha = Math.sin(w0) / (2 * Math.SQRT1_2);
     const a0 = 1 + alpha;
-    if (this.type === 'lp') { this.b0 = (1 - c) / 2 / a0; this.b1 = (1 - c) / a0; this.b2 = this.b0; }
-    else { this.b0 = (1 + c) / 2 / a0; this.b1 = -(1 + c) / a0; this.b2 = this.b0; }
-    this.a1 = (-2 * c) / a0;
-    this.a2 = (1 - alpha) / a0;
+    if (this.type === 'lp') { this.tb0 = (1 - c) / 2 / a0; this.tb1 = (1 - c) / a0; this.tb2 = this.tb0; }
+    else { this.tb0 = (1 + c) / 2 / a0; this.tb1 = -(1 + c) / a0; this.tb2 = this.tb0; }
+    this.ta1 = (-2 * c) / a0;
+    this.ta2 = (1 - alpha) / a0;
+    if (this.first) {
+      this.b0 = this.tb0; this.b1 = this.tb1; this.b2 = this.tb2; this.a1 = this.ta1; this.a2 = this.ta2;
+      this.first = false;
+    }
   }
   process(x) {
+    const k = this.k;
+    this.b0 += (this.tb0 - this.b0) * k; this.b1 += (this.tb1 - this.b1) * k; this.b2 += (this.tb2 - this.b2) * k;
+    this.a1 += (this.ta1 - this.a1) * k; this.a2 += (this.ta2 - this.a2) * k;
     const y = this.b0 * x + this.b1 * this.x1 + this.b2 * this.x2 - this.a1 * this.y1 - this.a2 * this.y2;
     this.x2 = this.x1; this.x1 = x; this.y2 = this.y1; this.y1 = y;
     return y;

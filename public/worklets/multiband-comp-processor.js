@@ -22,6 +22,10 @@ class LR4 {
       { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0, x1: 0, x2: 0, y1: 0, y2: 0 },
       { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0, x1: 0, x2: 0, y1: 0, y2: 0 },
     ];
+    // target coefficients (slewed toward, ~5 ms) so crossover moves don't click
+    this.t = { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0 };
+    this.first = true;
+    this.slew = 1 - Math.exp(-1 / (sampleRate * 0.005));
   }
   setFreq(sr, f) {
     const w0 = (2 * Math.PI * f) / sr;
@@ -34,15 +38,19 @@ class LR4 {
     } else {
       b0 = (1 + cosw) / 2; b1 = -(1 + cosw); b2 = (1 + cosw) / 2;
     }
-    const a1 = -2 * cosw;
-    const a2 = 1 - alpha;
-    for (const s of this.s) {
-      s.b0 = b0 / a0; s.b1 = b1 / a0; s.b2 = b2 / a0;
-      s.a1 = a1 / a0; s.a2 = a2 / a0;
+    this.t.b0 = b0 / a0; this.t.b1 = b1 / a0; this.t.b2 = b2 / a0;
+    this.t.a1 = (-2 * cosw) / a0; this.t.a2 = (1 - alpha) / a0;
+    if (this.first) {
+      for (const s of this.s) Object.assign(s, this.t);
+      this.first = false;
     }
   }
   process(x) {
+    const t = this.t;
+    const k = this.slew;
     for (const s of this.s) {
+      s.b0 += (t.b0 - s.b0) * k; s.b1 += (t.b1 - s.b1) * k; s.b2 += (t.b2 - s.b2) * k;
+      s.a1 += (t.a1 - s.a1) * k; s.a2 += (t.a2 - s.a2) * k;
       const y = s.b0 * x + s.b1 * s.x1 + s.b2 * s.x2 - s.a1 * s.y1 - s.a2 * s.y2;
       s.x2 = s.x1; s.x1 = x;
       s.y2 = s.y1; s.y1 = y;
