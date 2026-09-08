@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Download, FileArchive, Loader2 } from 'lucide-react';
+import { Download, FileArchive, Loader2, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAudio } from '@/contexts/AudioContext';
-import { exportAudio, downloadBlob, type MasterReport } from '@/lib/audioExport';
+import { exportAudio, exportAllTargets, downloadBlob, type MasterReport } from '@/lib/audioExport';
 import { toast } from 'sonner';
 
 const FORMATS = [
@@ -51,6 +51,35 @@ const ExportPanel = () => {
   };
 
   const platform = PLATFORMS.find(p => p.name === selectedPlatform);
+
+  const handleExportAllTargets = async () => {
+    if (!state.audioBuffer || !state.fileInfo) return;
+    setIsExporting(true);
+    try {
+      const result = await exportAllTargets(state.audioBuffer, {
+        targets: PLATFORMS.map(p => ({ name: p.name, lufs: p.lufs, peak: p.peak })),
+        formatId: selectedFormats[0] || 'wav24',
+        filename: state.fileInfo.name,
+        processing,
+        dither: 'shaped',
+        sampleRate: sampleRate || undefined,
+        onProgress: (label, pct) => setProgress(`${label}: ${pct}%`),
+      });
+      downloadBlob(result.blob, result.filename);
+      setReport(result.reports.find(r => r.name === 'Spotify')?.report ?? result.reports[0]?.report ?? null);
+      const missed = result.reports.filter(r => !r.report.onTarget).map(r => r.name);
+      toast.success(
+        `${result.reports.length} platform masters exported` +
+          (missed.length ? ` · ${missed.join(', ')} loudness-limited` : ''),
+      );
+    } catch (err) {
+      console.error('All-targets export error:', err);
+      toast.error('All-targets export failed');
+    } finally {
+      setIsExporting(false);
+      setProgress('');
+    }
+  };
 
   const handleExport = async (asZip: boolean) => {
     if (!state.audioBuffer || !state.fileInfo) return;
@@ -195,6 +224,15 @@ const ExportPanel = () => {
           onClick={() => handleExport(true)}
         >
           <FileArchive className="w-4 h-4" /> Export All as ZIP
+        </Button>
+        <Button
+          variant="secondary"
+          disabled={!state.audioBuffer || isExporting}
+          className="gap-2"
+          onClick={handleExportAllTargets}
+          title="Render one master per platform, each loudness-matched, bundled in a ZIP"
+        >
+          <Layers className="w-4 h-4" /> All Platform Masters
         </Button>
       </div>
 

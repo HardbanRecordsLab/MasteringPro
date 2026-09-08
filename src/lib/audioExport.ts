@@ -442,6 +442,73 @@ export async function exportAudio(
   };
 }
 
+/** A single delivery target for {@link exportAllTargets}. */
+export interface DeliveryTarget {
+  name: string;
+  lufs: number;
+  peak: number;
+}
+
+/**
+ * "One master, all targets" — render the mastering chain once per platform
+ * target, each loudness-matched (closed loop) to its own LUFS / true-peak
+ * ceiling, and bundle them in a single ZIP with a combined delivery report.
+ * The chain settings are identical across targets; only the final drive into
+ * the limiter changes, so every file is the same master at the right level.
+ */
+export async function exportAllTargets(
+  buffer: AudioBuffer,
+  options: {
+    targets: DeliveryTarget[];
+    formatId: string;
+    filename: string;
+    processing: ProcessingParams;
+    sampleRate?: number;
+    dither?: DitherMode;
+    onProgress?: (label: string, pct: number) => void;
+  },
+): Promise<{ blob: Blob; filename: string; reports: { name: string; report: MasterReport }[] }> {
+  const { targets, formatId, filename, processing, sampleRate, dither = 'shaped', onProgress } = options;
+  const baseName = filename.replace(/\.[^.]+$/, '');
+  const fmt = FORMAT_MAP[formatId] || FORMAT_MAP.wav24;
+  const zip = new JSZip();
+  const reports: { name: string; report: MasterReport }[] = [];
+
+  for (let i = 0; i < targets.length; i++) {
+    const t = targets[i];
+    const slug = t.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    const span = 100 / targets.length;
+    onProgress?.(t.name, Math.round(i * span));
+    const { buffer: rendered, report } = await renderMaster(buffer, {
+      processing,
+      targetPeakDb: t.peak,
+      targetLufs: t.lufs,
+      onProgress: (_l, pct) => onProgress?.(t.name, Math.round(i * span + (pct / 100) * span)),
+    });
+    const master = sampleRate ? await resampleBuffer(rendered, sampleRate) : rendered;
+    try {
+      const { data } = await encodeFormat(master, fmt, dither);
+      zip.file(`${baseName}_${slug}.${fmt.extension}`, data);
+    } catch (e) {
+      console.error(`[exportAllTargets] ${t.name} ${fmt.id} failed, WAV fallback`, e);
+      zip.file(`${baseName}_${slug}_FALLBACK.wav`, encodeWav(master, 24, dither));
+    }
+    reports.push({ name: t.name, report });
+  }
+
+  zip.file(
+    '_DELIVERY_REPORT.txt',
+    reports
+      .map(({ name, report }) => formatReport(report, `${baseName} — ${name}`))
+      .join(`\n\n${'='.repeat(60)}\n\n`),
+  );
+
+  onProgress?.('ZIP', 0);
+  const blob = await zip.generateAsync({ type: 'blob' }, (m) => onProgress?.('ZIP', Math.round(m.percent)));
+  onProgress?.('ZIP', 100);
+  return { blob, filename: `${baseName}_all-targets.zip`, reports };
+}
+
 /** Human-readable delivery report bundled with a ZIP export. */
 function formatReport(r: MasterReport, name: string): string {
   const lines = [
