@@ -56,6 +56,7 @@ export function loadMasteringWorklets(ctx: AudioContext): Promise<void> {
       ctx.audioWorklet.addModule('/worklets/dynamics-eq-processor.js'),
       ctx.audioWorklet.addModule('/worklets/compressor-processor.js'),
       ctx.audioWorklet.addModule('/worklets/bass-mono-processor.js'),
+      ctx.audioWorklet.addModule('/worklets/loudness-meter-processor.js'),
       ctx.audioWorklet.addModule('/worklets/lookahead-limiter-processor.js'),
     ]).then(() => undefined);
   }
@@ -160,6 +161,8 @@ export class MasteringEngine {
   endSplitter: ChannelSplitterNode;
   analyserL: AnalyserNode;
   analyserR: AnalyserNode;
+  loudnessMeterNode: AudioWorkletNode | null = null;
+  private _loudness = { momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity, lra: 0, maxM: -Infinity, maxS: -Infinity };
 
   // Worklet metering state
   private _gateGR = 0;
@@ -425,6 +428,35 @@ export class MasteringEngine {
         console.warn('[engine] bass-mono worklet not available', err);
       }
     }
+    if (!this.loudnessMeterNode) {
+      try {
+        this.loudnessMeterNode = new AudioWorkletNode(this.ctx, 'loudness-meter-processor', {
+          numberOfInputs: 1, numberOfOutputs: 0,
+        });
+        this.loudnessMeterNode.port.onmessage = (e) => {
+          const d = e.data;
+          if (d && typeof d.m === 'number') {
+            this._loudness = {
+              momentary: d.m, shortTerm: d.s, integrated: d.i, lra: d.lra,
+              maxM: d.maxM, maxS: d.maxS,
+            };
+          }
+        };
+        // dead-end tap on the post-chain bus
+        this.limiterOutputBus.connect(this.loudnessMeterNode);
+      } catch (err) {
+        console.warn('[engine] loudness meter worklet not available', err);
+      }
+    }
+  }
+
+  /** Real-time BS.1770-4 loudness (LUFS). */
+  getLoudness() { return this._loudness; }
+
+  /** Restart integrated-loudness / LRA measurement (call on transport start). */
+  resetLoudness() {
+    this._loudness = { momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity, lra: 0, maxM: -Infinity, maxS: -Infinity };
+    this.loudnessMeterNode?.port.postMessage({ reset: true });
   }
 
   private createEQ(type: BiquadFilterType, freq: number, gain: number, q: number): BiquadFilterNode {

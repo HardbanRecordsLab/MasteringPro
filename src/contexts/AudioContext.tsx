@@ -437,6 +437,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     sourceRef.current = source;
 
     engine.connectSource(source);
+    engine.resetLoudness();
     startTimeRef.current = ctx.currentTime;
     source.start(0, offsetRef.current);
 

@@ -7,6 +7,7 @@ const MeteringPanel = () => {
   const [peakHold, setPeakHold] = useState({ left: -60, right: -60 });
   const [compGR, setCompGR] = useState(0);
   const [limGR, setLimGR] = useState(0);
+  const [loud, setLoud] = useState({ momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity, lra: 0 });
   const [corr, setCorr] = useState(1);
   const corrHistRef = useRef<number[]>([]);
   const corrCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -38,6 +39,7 @@ const MeteringPanel = () => {
     // Gain reduction
     setCompGR(engine.getCompressorGR());
     setLimGR(engine.getLimiterGR());
+    setLoud(engine.getLoudness());
 
     // Spectrum analyzer
     const specCanvas = spectrumRef.current;
@@ -80,14 +82,14 @@ const MeteringPanel = () => {
       setLevels({ left: -60, right: -60 });
       setCompGR(0);
       setLimGR(0);
+      setLoud({ momentary: -Infinity, shortTerm: -Infinity, integrated: -Infinity, lra: 0 });
       setCorr(1);
       corrHistRef.current = [];
     }
     return () => cancelAnimationFrame(rafRef.current);
   }, [state.isPlaying, engine, draw]);
 
-  // Approximate LUFS from RMS levels
-  const lufsApprox = Math.round(((levels.left + levels.right) / 2 - 0.691) * 10) / 10;
+  const fmtLufs = (v: number) => (state.isPlaying && Number.isFinite(v) ? v.toFixed(1) : '—');
 
   return (
     <div className="panel p-3 space-y-4">
@@ -99,9 +101,23 @@ const MeteringPanel = () => {
         <LevelMeter label="R" value={levels.right} peak={peakHold.right} />
       </div>
 
+      {/* BS.1770-4 loudness */}
+      <div className="grid grid-cols-4 gap-1.5 text-center">
+        {[
+          ['LUFS-M', fmtLufs(loud.momentary)],
+          ['LUFS-S', fmtLufs(loud.shortTerm)],
+          ['LUFS-I', fmtLufs(loud.integrated)],
+          ['LRA · LU', state.isPlaying ? loud.lra.toFixed(1) : '—'],
+        ].map(([l, v]) => (
+          <div key={l} className="inset-well py-1">
+            <div className="font-mono-display text-xs text-primary">{v}</div>
+            <div className="text-[7px] uppercase tracking-wider text-muted-foreground">{l}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Readouts */}
       <div className="space-y-1.5">
-        <MetricDisplay label="LUFS ≈" value={state.isPlaying ? `${lufsApprox}` : '—'} />
         <MetricDisplay label="True Peak L" value={state.isPlaying ? `${peakHold.left.toFixed(1)}` : '—'} warn={peakHold.left > -1} />
         <MetricDisplay label="True Peak R" value={state.isPlaying ? `${peakHold.right.toFixed(1)}` : '—'} warn={peakHold.right > -1} />
         <MetricDisplay label="Comp GR" value={state.isPlaying ? `${compGR.toFixed(1)} dB` : '—'} />
