@@ -14,6 +14,7 @@ import {
   NoiseGateModule,
   ParametricEQModule,
   DeEsserModule,
+  ResonanceModule,
   MultibandCompModule,
   StereoCompModule,
   SaturationModule,
@@ -148,6 +149,7 @@ const MasteringApp = () => {
               <ParametricEQModule />
               <MidSideEQModule />
               <DeEsserModule />
+              <ResonanceModule />
               <SaturationModule />
             </TabsContent>
 

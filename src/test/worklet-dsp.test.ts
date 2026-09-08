@@ -12,6 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { measureTruePeak } from '@/lib/loudness';
+import { analyzeSpectrum } from '@/lib/spectrum';
 
 const SR = 48000;
 const BLOCK = 128;
@@ -154,6 +155,56 @@ describe('worklet — bass mono-maker', () => {
     let hdiff = 0;
     for (let i = SR; i < hiL.length; i++) hdiff += Math.abs(hiL[i] - hiR[i]);
     expect(hdiff / (hiL.length - SR)).toBeGreaterThan(0.1); // still anti-phase up top
+  });
+});
+
+describe('worklet — resonance suppressor', () => {
+  const Cls = loadWorklet('resonance-suppressor-processor.js');
+
+  function noise(seconds: number, ampDb: number): Float32Array {
+    const n = Math.floor(SR * seconds);
+    const a = Math.pow(10, ampDb / 20);
+    const out = new Float32Array(n);
+    let s = 12345;
+    for (let i = 0; i < n; i++) {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      out[i] = a * ((s / 0x3fffffff) - 1);
+    }
+    return out;
+  }
+
+  function bandDb(x: Float32Array, centre: number): number {
+    const spec = analyzeSpectrum(fakeBuffer([x, x.slice()]), 8192);
+    let best = 0;
+    for (let i = 1; i < spec.thirdOctaveCenters.length; i++) {
+      if (Math.abs(spec.thirdOctaveCenters[i] - centre) < Math.abs(spec.thirdOctaveCenters[best] - centre)) best = i;
+    }
+    return spec.thirdOctaveDb[best];
+  }
+
+  it('reconstructs unity (COLA) when disabled', () => {
+    const s = sine(1000, -12, 3);
+    const [outL] = run(Cls, { enabled: false }, s, s.slice());
+    expect(Math.abs(tailRmsDb(outL) - tailRmsDb(s))).toBeLessThan(0.3);
+  });
+
+  it('leaves broadband noise roughly intact but pulls a planted resonance down', () => {
+    const base = noise(3, -20);
+    const reso = sine(3000, -14, 3); // a strong narrow peak on top
+    const dirty = new Float32Array(base.length);
+    for (let i = 0; i < base.length; i++) dirty[i] = base[i] + reso[i];
+
+    const opts = { enabled: true, amount: 90, strength: 1, depth: 18, threshold: 3, attack: 5, release: 80 };
+    const [outL] = run(Cls, opts, dirty, dirty.slice());
+
+    const before = bandDb(dirty.subarray(SR), 3000);
+    const after = bandDb(outL.subarray(SR), 3000);
+    expect(before - after).toBeGreaterThan(4); // the 3 kHz peak is tamed
+
+    // broadband level barely moves (a band well away from the resonance)
+    const wideBefore = bandDb(dirty.subarray(SR), 500);
+    const wideAfter = bandDb(outL.subarray(SR), 500);
+    expect(Math.abs(wideBefore - wideAfter)).toBeLessThan(2.5);
   });
 });
 

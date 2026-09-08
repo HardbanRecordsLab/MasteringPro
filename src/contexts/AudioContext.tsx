@@ -57,6 +57,13 @@ export interface ProcessingParams {
   dynEqThreshold: number;
   dynEqRange: number;
   dynEqMode: 'cut' | 'boost';
+  resoEnabled: boolean;
+  resoAmount: number;
+  resoStrength: number;
+  resoDepth: number;
+  resoThreshold: number;
+  resoLowHz: number;
+  resoHighHz: number;
   saturation: number;
   saturationEnabled: boolean;
   widthEnabled: boolean;
@@ -125,6 +132,13 @@ const DEFAULT_PROCESSING: ProcessingParams = {
   dynEqThreshold: -24,
   dynEqRange: 6,
   dynEqMode: 'cut',
+  resoEnabled: false,
+  resoAmount: 50,
+  resoStrength: 0.7,
+  resoDepth: 12,
+  resoThreshold: 6,
+  resoLowHz: 120,
+  resoHighHz: 16000,
   saturation: 0,
   saturationEnabled: false,
   widthEnabled: true,
@@ -342,6 +356,18 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       },
     });
     engine.bypassDynamicsEq(!p.deEssEnabled && !p.dynEqEnabled);
+
+    engine.setResonance({
+      enabled: p.resoEnabled,
+      amount: p.resoAmount,
+      strength: p.resoStrength,
+      depth: p.resoDepth,
+      threshold: p.resoThreshold,
+      attack: 12,
+      release: 120,
+      lowHz: p.resoLowHz,
+      highHz: p.resoHighHz,
+    });
 
     engine.setSaturation(p.saturationEnabled ? p.saturation : 0);
 

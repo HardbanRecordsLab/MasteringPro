@@ -655,6 +655,56 @@ const DeEsserModule = () => {
   );
 };
 
+const ResonanceModule = () => {
+  const { processing, setProcessing, engine, state } = useAudio();
+  const [gr, setGr] = useState(0);
+  const rafRef = useRef(0);
+  const active = state.isPlaying && processing.resoEnabled;
+  useEffect(() => {
+    if (!engine || !active) { setGr(0); return; }
+    const tick = () => {
+      setGr(engine.getResonanceGR());
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [engine, active]);
+  const set = (patch: Partial<typeof processing>) => setProcessing((p) => ({ ...p, ...patch }));
+
+  return (
+    <ModulePanel
+      title="Resonance Suppressor"
+      enabled={processing.resoEnabled}
+      onToggle={() => set({ resoEnabled: !processing.resoEnabled })}
+    >
+      <p className="text-[9px] text-muted-foreground mb-2 leading-snug">
+        Dynamically tames ringing peaks and harshness — finds bins that stick out
+        above the spectral envelope and pulls only those down, per frame.
+      </p>
+      <div className="flex items-center justify-end mb-1">
+        <span className="text-[8px] font-mono text-primary">{gr.toFixed(1)} dB</span>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        <KnobControl label="Amount" value={processing.resoAmount} min={0} max={100} step={1} unit="%"
+          onChange={(v) => set({ resoAmount: v })} />
+        <KnobControl label="Strength" value={processing.resoStrength} min={0} max={1} step={0.05}
+          onChange={(v) => set({ resoStrength: v })} />
+        <KnobControl label="Depth" value={processing.resoDepth} min={3} max={24} step={0.5} unit="dB"
+          onChange={(v) => set({ resoDepth: v })} />
+        <KnobControl label="Thresh" value={processing.resoThreshold} min={1} max={18} step={0.5} unit="dB"
+          onChange={(v) => set({ resoThreshold: v })} />
+      </div>
+      <div className="grid grid-cols-2 gap-2 mt-2">
+        <KnobControl label="Low" value={processing.resoLowHz} min={20} max={2000} step={10} unit="Hz"
+          onChange={(v) => set({ resoLowHz: Math.min(v, processing.resoHighHz - 500) })} />
+        <KnobControl label="High" value={processing.resoHighHz} min={2000} max={20000} step={100} unit="Hz"
+          onChange={(v) => set({ resoHighHz: Math.max(v, processing.resoLowHz + 500) })} />
+      </div>
+      <GainReductionMeter value={gr} />
+    </ModulePanel>
+  );
+};
+
 const StereoCompModule = () => {
   const { processing, setProcessing, engine, state } = useAudio();
 
@@ -819,6 +869,7 @@ export {
   NoiseGateModule,
   ParametricEQModule,
   DeEsserModule,
+  ResonanceModule,
   MultibandCompModule,
   StereoCompModule,
   SaturationModule,

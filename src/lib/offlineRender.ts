@@ -33,6 +33,7 @@ const WORKLET_URLS = [
   '/worklets/mid-side-eq-processor.js',
   '/worklets/multiband-comp-processor.js',
   '/worklets/dynamics-eq-processor.js',
+  '/worklets/resonance-suppressor-processor.js',
   '/worklets/compressor-processor.js',
   '/worklets/bass-mono-processor.js',
   '/worklets/lookahead-limiter-processor.js',
@@ -151,6 +152,26 @@ export async function renderProcessed(
     }
   }
 
+  // Adaptive resonance suppressor (worklet)
+  let resoLatency = 0;
+  if (hasWorklets && p.resoEnabled) {
+    try {
+      const rs = new AudioWorkletNode(ctx, 'resonance-suppressor-processor', {
+        numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+        processorOptions: {
+          enabled: true, amount: p.resoAmount, strength: p.resoStrength,
+          depth: p.resoDepth, threshold: p.resoThreshold,
+          attack: 12, release: 120, lowHz: p.resoLowHz, highHz: p.resoHighHz,
+        },
+      });
+      node.connect(rs);
+      node = rs;
+      resoLatency = 2048; // one STFT analysis window
+    } catch (e) {
+      console.warn('[offlineRender] resonance suppressor skipped', e);
+    }
+  }
+
   // Multiband compressor (worklet)
   if (hasWorklets && p.mbEnabled) {
     try {
@@ -245,7 +266,7 @@ export async function renderProcessed(
   }
 
   // Limiter — real lookahead true-peak limiter when available
-  let latencySamples = 0;
+  let latencySamples = resoLatency;
   // the worklet compressor is zero-latency; only the native fallback adds delay
   if (p.compEnabled && !hasWorklets) latencySamples += compressorLatencySamples(buffer.sampleRate);
   if (p.limiterEnabled) {

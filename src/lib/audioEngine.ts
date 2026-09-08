@@ -39,6 +39,21 @@ export interface DynamicsEqParams {
   dyn: { enabled: boolean; freq: number; q: number; threshold: number; range: number; attack: number; release: number; mode: 'cut' | 'boost' };
 }
 
+export interface ResonanceParams {
+  enabled: boolean;
+  amount: number;     // 0..100 overall intensity
+  strength: number;   // 0..1 how hard matched peaks are pulled toward the envelope
+  depth: number;      // dB — maximum cut per bin
+  threshold: number;  // dB above the local envelope before a bin is treated as a resonance
+  attack: number;     // ms
+  release: number;    // ms
+  lowHz: number;      // only act between lowHz..highHz
+  highHz: number;
+}
+
+/** Extra monitoring latency (samples) the resonance suppressor's STFT adds when active. */
+export const RESONANCE_LATENCY_SAMPLES = 2048;
+
 export interface CompressorParams {
   threshold: number; ratio: number; attack: number; release: number; knee: number;
   makeup: number; mix: number;
@@ -54,6 +69,7 @@ export function loadMasteringWorklets(ctx: AudioContext): Promise<void> {
       ctx.audioWorklet.addModule('/worklets/mid-side-eq-processor.js'),
       ctx.audioWorklet.addModule('/worklets/multiband-comp-processor.js'),
       ctx.audioWorklet.addModule('/worklets/dynamics-eq-processor.js'),
+      ctx.audioWorklet.addModule('/worklets/resonance-suppressor-processor.js'),
       ctx.audioWorklet.addModule('/worklets/compressor-processor.js'),
       ctx.audioWorklet.addModule('/worklets/bass-mono-processor.js'),
       ctx.audioWorklet.addModule('/worklets/loudness-meter-processor.js'),
@@ -130,6 +146,14 @@ export class MasteringEngine {
   private _deEssGR = 0;
   private _dynEqGR = 0;
   private _dynEqParams: DynamicsEqParams | null = null;
+
+  resonanceNode: AudioWorkletNode | null = null;
+  resonanceWet: GainNode;
+  resonanceDry: GainNode;
+  resonanceInputBus: GainNode;
+  resonanceOutputBus: GainNode;
+  private _resonanceGR = 0;
+  private _resonanceParams: ResonanceParams | null = null;
 
   compWorkletNode: AudioWorkletNode | null = null;
   compWet: GainNode;
@@ -247,6 +271,14 @@ export class MasteringEngine {
     this.dynEqDry = ctx.createGain();
     this.dynEqWet.gain.value = 0;
     this.dynEqDry.gain.value = 1;
+
+    // Adaptive resonance suppressor wet/dry buses
+    this.resonanceInputBus = ctx.createGain();
+    this.resonanceOutputBus = ctx.createGain();
+    this.resonanceWet = ctx.createGain();
+    this.resonanceDry = ctx.createGain();
+    this.resonanceWet.gain.value = 0;
+    this.resonanceDry.gain.value = 1;
 
     // Compressor wet/dry buses (worklet = wet, native DynamicsCompressor = fallback)
     this.compInputBus = ctx.createGain();
@@ -378,6 +410,22 @@ export class MasteringEngine {
         console.warn('[engine] dynamics-eq worklet not available', err);
       }
     }
+    if (!this.resonanceNode) {
+      try {
+        this.resonanceNode = new AudioWorkletNode(this.ctx, 'resonance-suppressor-processor', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+        });
+        this.resonanceNode.port.onmessage = (e) => {
+          if (typeof e.data?.grDb === 'number') this._resonanceGR = e.data.grDb;
+        };
+        this.resonanceInputBus.connect(this.resonanceNode);
+        this.resonanceNode.connect(this.resonanceWet);
+        this.resonanceWet.connect(this.resonanceOutputBus);
+        if (this._resonanceParams) this.setResonance(this._resonanceParams);
+      } catch (err) {
+        console.warn('[engine] resonance-suppressor worklet not available', err);
+      }
+    }
     if (!this.compWorkletNode) {
       try {
         this.compWorkletNode = new AudioWorkletNode(this.ctx, 'compressor-processor', {
@@ -492,8 +540,13 @@ export class MasteringEngine {
     this.midSideInputBus.connect(this.midSideDry);
     this.midSideDry.connect(this.midSideOutputBus);
 
-    // midSide → multiband bus (worklet wired in attachWorklets, dry path always on)
-    this.midSideOutputBus.connect(this.multibandInputBus);
+    // midSide → resonance suppressor bus (worklet wired in attachWorklets, dry path always on)
+    this.midSideOutputBus.connect(this.resonanceInputBus);
+    this.resonanceInputBus.connect(this.resonanceDry);
+    this.resonanceDry.connect(this.resonanceOutputBus);
+
+    // resonance → multiband bus (worklet wired in attachWorklets, dry path always on)
+    this.resonanceOutputBus.connect(this.multibandInputBus);
     this.multibandInputBus.connect(this.multibandDry);
     this.multibandDry.connect(this.multibandOutputBus);
 
@@ -797,6 +850,34 @@ export class MasteringEngine {
 
   getDeEsserGR(): number { return this._deEssGR; }
   getDynEqGR(): number { return this._dynEqGR; }
+
+  // --- Adaptive resonance suppressor (AudioWorklet) ---
+
+  setResonance(params: ResonanceParams) {
+    this._resonanceParams = params;
+    this.resonanceNode?.port.postMessage({
+      enabled: params.enabled,
+      amount: params.amount,
+      strength: params.strength,
+      depth: params.depth,
+      threshold: params.threshold,
+      attack: params.attack,
+      release: params.release,
+      lowHz: params.lowHz,
+      highHz: params.highHz,
+    });
+    this.bypassResonance(!params.enabled);
+  }
+
+  bypassResonance(bypass: boolean) {
+    const t = this.ctx.currentTime;
+    const has = !!this.resonanceNode;
+    const wet = bypass || !has ? 0 : 1;
+    this.resonanceWet.gain.setTargetAtTime(wet, t, 0.01);
+    this.resonanceDry.gain.setTargetAtTime(1 - wet, t, 0.01);
+  }
+
+  getResonanceGR(): number { return this._resonanceGR; }
 
 
   getCompressorGR(): number {
