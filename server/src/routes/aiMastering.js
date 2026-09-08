@@ -32,6 +32,44 @@ const STYLE_BRIEF = {
     "Voice-forward: 200-400Hz cut, 3-5kHz presence boost, 8-10kHz air, de-ess hint at 6-8kHz, resonanceSuppressor amount 40-60 for mouth/room resonances, gentle 2:1 comp, no aggressive limiting.",
 };
 
+// ============================================================================
+// Genre reference targets — rough tonal-balance anchors (% of broadband energy
+// in the same 5 bands the analyzer reports) + a typical TT-DR window. Used to
+// ground the AI's EQ moves instead of letting it guess a curve.
+// ============================================================================
+const GENRE_CURVES = {
+  "edm":        { bands: [12, 26, 30, 20, 12], dr: "5-7" },
+  "house":      { bands: [12, 26, 30, 20, 12], dr: "6-8" },
+  "techno":     { bands: [11, 27, 31, 19, 12], dr: "6-8" },
+  "dubstep":    { bands: [15, 27, 29, 17, 12], dr: "5-7" },
+  "drum & bass":{ bands: [14, 27, 29, 18, 12], dr: "5-7" },
+  "hip-hop":    { bands: [15, 28, 30, 17, 10], dr: "6-8" },
+  "trap":       { bands: [16, 28, 29, 17, 10], dr: "5-7" },
+  "pop":        { bands: [8, 24, 34, 22, 12], dr: "7-9" },
+  "r&b":        { bands: [12, 26, 32, 18, 12], dr: "8-10" },
+  "soul":       { bands: [10, 24, 34, 20, 12], dr: "9-12" },
+  "rock":       { bands: [6, 22, 38, 22, 12], dr: "8-11" },
+  "indie":      { bands: [6, 21, 39, 22, 12], dr: "9-12" },
+  "metal":      { bands: [6, 24, 36, 22, 12], dr: "6-8" },
+  "acoustic":   { bands: [5, 20, 40, 22, 13], dr: "11-14" },
+  "folk":       { bands: [5, 20, 40, 22, 13], dr: "11-14" },
+  "jazz":       { bands: [5, 18, 42, 22, 13], dr: "14-20" },
+  "classical":  { bands: [5, 17, 42, 23, 13], dr: "15-22" },
+  "ambient":    { bands: [9, 22, 36, 20, 13], dr: "12-18" },
+  "reggae":     { bands: [13, 27, 32, 17, 11], dr: "8-11" },
+  "country":    { bands: [6, 21, 39, 22, 12], dr: "9-12" },
+};
+
+/** Closest genre curve by substring match on the detected genre string. */
+function genreCurveFor(genre) {
+  if (!genre) return null;
+  const g = String(genre).toLowerCase();
+  for (const key of Object.keys(GENRE_CURVES)) {
+    if (g.includes(key) || key.includes(g)) return { key, ...GENRE_CURVES[key] };
+  }
+  return null;
+}
+
 const INTENSITY_HINT = {
   subtle: "Apply 50% strength: gains capped ±3dB, ratio ≤2.5:1, target -1 to -2 LUFS short of platform target.",
   standard: "Apply 100% strength: balanced changes, hit platform LUFS target exactly.",
@@ -187,6 +225,11 @@ export async function aiMasteringHandler(c) {
     userMsg += `\n\nTARGET PLATFORM: ${platformTarget.label} → ${platformTarget.lufs} LUFS-I, true-peak ceiling ${platformTarget.tp} dBFS.`;
     userMsg += `\nMASTERING STYLE: ${String(style).toUpperCase()} — ${styleBrief}`;
     userMsg += `\nINTENSITY: ${String(intensity).toUpperCase()} — ${intensityHint}`;
+
+    const gc = genreCurveFor(metrics.estimatedGenre);
+    if (gc && !isReferenceMatch) {
+      userMsg += `\nGENRE REFERENCE (${gc.key}): typical band split Sub/Bass/Mid/HiMid/Air ≈ ${gc.bands.join("/")} %, typical TT DR ${gc.dr}. Move the SOURCE band split toward this only where it also serves the material — it is an anchor, not a hard target. Don't chase the DR window at the cost of the requested loudness.`;
+    }
 
     const isRefinement = achievedMetrics && previousConfig;
     if (isRefinement) {
