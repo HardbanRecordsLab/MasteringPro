@@ -28,6 +28,13 @@ const Header = () => {
               <span>{state.fileInfo.bitDepth}bit</span>
               <span>{state.fileInfo.channels === 2 ? 'Stereo' : 'Mono'}</span>
               <span className="text-foreground">{formatDuration(state.fileInfo.duration)}</span>
+              {state.musical && (state.musical.key !== '—' || state.musical.bpm > 0) && (
+                <span className="text-primary normal-case tracking-normal">
+                  {state.musical.key !== '—' && state.musical.key}
+                  {state.musical.key !== '—' && state.musical.bpm > 0 && ' · '}
+                  {state.musical.bpm > 0 && `${state.musical.bpm} BPM`}
+                </span>
+              )}
             </div>
           )}
           <ModeSelector />

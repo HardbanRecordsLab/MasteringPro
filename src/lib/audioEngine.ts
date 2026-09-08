@@ -39,6 +39,13 @@ export interface DynamicsEqParams {
   dyn: { enabled: boolean; freq: number; q: number; threshold: number; range: number; attack: number; release: number; mode: 'cut' | 'boost' };
 }
 
+export interface CompressorParams {
+  threshold: number; ratio: number; attack: number; release: number; knee: number;
+  makeup: number; mix: number;
+  detect: 'peak' | 'rms'; mode: 'stereo' | 'ms' | 'dual';
+  autoRelease: boolean; autoMakeup: boolean;
+}
+
 let _workletsLoaded: Promise<void> | null = null;
 export function loadMasteringWorklets(ctx: AudioContext): Promise<void> {
   if (!_workletsLoaded) {
@@ -47,6 +54,7 @@ export function loadMasteringWorklets(ctx: AudioContext): Promise<void> {
       ctx.audioWorklet.addModule('/worklets/mid-side-eq-processor.js'),
       ctx.audioWorklet.addModule('/worklets/multiband-comp-processor.js'),
       ctx.audioWorklet.addModule('/worklets/dynamics-eq-processor.js'),
+      ctx.audioWorklet.addModule('/worklets/compressor-processor.js'),
       ctx.audioWorklet.addModule('/worklets/lookahead-limiter-processor.js'),
     ]).then(() => undefined);
   }
@@ -111,6 +119,14 @@ export class MasteringEngine {
   private _deEssGR = 0;
   private _dynEqGR = 0;
   private _dynEqParams: DynamicsEqParams | null = null;
+
+  compWorkletNode: AudioWorkletNode | null = null;
+  compWet: GainNode;
+  compDry: GainNode;
+  compInputBus: GainNode;
+  compOutputBus: GainNode;
+  private _compGR = 0;
+  private _compParams: CompressorParams | null = null;
 
   // Stereo width
   widthSplitter: ChannelSplitterNode;
@@ -196,6 +212,14 @@ export class MasteringEngine {
     this.dynEqDry = ctx.createGain();
     this.dynEqWet.gain.value = 0;
     this.dynEqDry.gain.value = 1;
+
+    // Compressor wet/dry buses (worklet = wet, native DynamicsCompressor = fallback)
+    this.compInputBus = ctx.createGain();
+    this.compOutputBus = ctx.createGain();
+    this.compWet = ctx.createGain();
+    this.compDry = ctx.createGain();
+    this.compWet.gain.value = 0;
+    this.compDry.gain.value = 1;
 
     // Stereo compressor
     this.compressorNode = ctx.createDynamicsCompressor();
@@ -319,6 +343,22 @@ export class MasteringEngine {
         console.warn('[engine] dynamics-eq worklet not available', err);
       }
     }
+    if (!this.compWorkletNode) {
+      try {
+        this.compWorkletNode = new AudioWorkletNode(this.ctx, 'compressor-processor', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+        });
+        this.compWorkletNode.port.onmessage = (e) => {
+          if (typeof e.data?.gr === 'number') this._compGR = e.data.gr;
+        };
+        this.compInputBus.connect(this.compWorkletNode);
+        this.compWorkletNode.connect(this.compWet);
+        this.compWet.connect(this.compOutputBus);
+        if (this._compParams) this.setCompressorFull(this._compParams);
+      } catch (err) {
+        console.warn('[engine] compressor worklet not available', err);
+      }
+    }
     if (!this.limiterWorkletNode) {
       try {
         this.limiterWorkletNode = new AudioWorkletNode(this.ctx, 'lookahead-limiter-processor', {
@@ -378,10 +418,16 @@ export class MasteringEngine {
     this.dynEqInputBus.connect(this.dynEqDry);
     this.dynEqDry.connect(this.dynEqOutputBus);
 
-    // dynEq → compressor → makeup → waveshaper
-    this.dynEqOutputBus.connect(this.compressorNode);
+    // dynEq → compressor bus. Native DynamicsCompressor + makeup is the dry
+    // (fallback) path; the worklet compressor is wired as wet in attachWorklets.
+    this.dynEqOutputBus.connect(this.compInputBus);
+    this.compInputBus.connect(this.compressorNode);
     this.compressorNode.connect(this.makeupGainNode);
-    this.makeupGainNode.connect(this.waveShaperNode);
+    this.makeupGainNode.connect(this.compDry);
+    this.compDry.connect(this.compOutputBus);
+
+    // compressor → waveshaper
+    this.compOutputBus.connect(this.waveShaperNode);
 
     // Waveshaper → stereo width matrix
     this.waveShaperNode.connect(this.widthSplitter);
@@ -459,15 +505,29 @@ export class MasteringEngine {
     if (params.knee !== undefined) this.ramp(this.compressorNode.knee, params.knee);
   }
 
+  /** Full worklet-compressor config (deterministic, M/S, parallel, auto). */
+  setCompressorFull(p: CompressorParams) {
+    this._compParams = p;
+    this.setCompressor(p); // keep the native fallback in sync
+    this.compWorkletNode?.port.postMessage(p);
+  }
+
   bypassCompressor(bypass: boolean) {
     const t = this.ctx.currentTime;
-    if (bypass) {
-      this.compressorNode.threshold.setValueAtTime(0, t);
-      this.compressorNode.ratio.setValueAtTime(1, t);
-    }
+    const hasWorklet = !!this.compWorkletNode;
+    const useWorklet = !bypass && hasWorklet;
+    this.compWet.gain.setTargetAtTime(useWorklet ? 1 : 0, t, 0.005);
+    this.compDry.gain.setTargetAtTime(useWorklet ? 0 : 1, t, 0.005);
+    // the native DynamicsCompressor sits in the dry path — neutralise it unless
+    // it is the active processor (no worklet, not bypassed)
+    const nativeActive = !bypass && !hasWorklet;
+    this.compressorNode.threshold.setValueAtTime(nativeActive ? (this._compParams?.threshold ?? -12) : 0, t);
+    this.compressorNode.ratio.setValueAtTime(nativeActive ? Math.max(1, this._compParams?.ratio ?? 3) : 1, t);
+    if (!nativeActive) this.makeupGainNode.gain.setTargetAtTime(1, t, 0.005);
   }
 
   setMakeupGain(db: number) {
+    // only used by the native fallback path — the worklet has its own makeup
     this.ramp(this.makeupGainNode.gain, dbToGain(db));
   }
 
@@ -635,7 +695,7 @@ export class MasteringEngine {
 
 
   getCompressorGR(): number {
-    return this.compressorNode.reduction;
+    return this.compWorkletNode ? this._compGR : this.compressorNode.reduction;
   }
 
 

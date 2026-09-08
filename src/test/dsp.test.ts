@@ -104,3 +104,17 @@ describe('limiter latency', () => {
     expect(lat).toBeLessThan(320);
   });
 });
+
+describe('musical content — key detection', () => {
+  it('detects C major from a sustained C-E-G triad', async () => {
+    const { detectKey } = await import('@/lib/musicAnalysis');
+    const n = SR * 3;
+    const data = new Float32Array(n);
+    for (const f of [261.63, 329.63, 392.0]) {
+      for (let i = 0; i < n; i++) data[i] += 0.25 * Math.sin((2 * Math.PI * f * i) / SR);
+    }
+    const { key } = detectKey(fakeBuffer([data, data.slice()], SR));
+    expect(key).toContain('C');
+    expect(key).toContain('major');
+  });
+});

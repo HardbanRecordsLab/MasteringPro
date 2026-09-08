@@ -617,25 +617,47 @@ const StereoCompModule = () => {
     state.isPlaying && processing.compEnabled
   );
 
+  const set = (patch: Partial<typeof processing>) => setProcessing((p) => ({ ...p, ...patch }));
+  const pill = (on: boolean) =>
+    `text-[9px] font-mono px-1.5 py-0.5 rounded transition-colors ${on ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground hover:text-foreground'}`;
+
   return (
     <ModulePanel
-      title="Stereo Comp"
+      title="Compressor"
       enabled={processing.compEnabled}
-      onToggle={() => setProcessing(p => ({ ...p, compEnabled: !p.compEnabled }))}
+      onToggle={() => set({ compEnabled: !processing.compEnabled })}
     >
+      <div className="flex flex-wrap gap-1 mb-2">
+        {(['stereo', 'ms', 'dual'] as const).map((m) => (
+          <button key={m} onClick={() => set({ compMode: m })} className={pill(processing.compMode === m)}>
+            {m === 'stereo' ? 'Linked' : m === 'ms' ? 'M/S' : 'Dual'}
+          </button>
+        ))}
+        <span className="w-px bg-border mx-0.5" />
+        {(['peak', 'rms'] as const).map((d) => (
+          <button key={d} onClick={() => set({ compDetect: d })} className={pill(processing.compDetect === d)}>
+            {d.toUpperCase()}
+          </button>
+        ))}
+        <span className="w-px bg-border mx-0.5" />
+        <button onClick={() => set({ compAutoRelease: !processing.compAutoRelease })} className={pill(processing.compAutoRelease)}>AUTO REL</button>
+        <button onClick={() => set({ compAutoMakeup: !processing.compAutoMakeup })} className={pill(processing.compAutoMakeup)}>AUTO GAIN</button>
+      </div>
       <div className="grid grid-cols-2 gap-3">
-        <KnobControl label="Threshold" value={processing.compThreshold} min={-40} max={0} unit="dB"
-          onChange={(v) => setProcessing(p => ({ ...p, compThreshold: v }))} />
+        <KnobControl label="Threshold" value={processing.compThreshold} min={-48} max={0} step={0.5} unit="dB"
+          onChange={(v) => set({ compThreshold: v })} />
         <KnobControl label="Ratio" value={processing.compRatio} min={1} max={20} step={0.1}
-          onChange={(v) => setProcessing(p => ({ ...p, compRatio: v }))} />
+          onChange={(v) => set({ compRatio: v })} />
         <KnobControl label="Attack" value={processing.compAttack} min={0.1} max={100} step={0.1} unit="ms"
-          onChange={(v) => setProcessing(p => ({ ...p, compAttack: v }))} />
+          onChange={(v) => set({ compAttack: v })} />
         <KnobControl label="Release" value={processing.compRelease} min={10} max={1000} unit="ms"
-          onChange={(v) => setProcessing(p => ({ ...p, compRelease: v }))} />
+          onChange={(v) => set({ compRelease: v })} />
         <KnobControl label="Knee" value={processing.compKnee} min={0} max={20} unit="dB"
-          onChange={(v) => setProcessing(p => ({ ...p, compKnee: v }))} />
+          onChange={(v) => set({ compKnee: v })} />
+        <KnobControl label="Mix" value={processing.compMix} min={0} max={100} unit="%"
+          onChange={(v) => set({ compMix: v })} />
         <KnobControl label="Makeup" value={processing.compMakeup} min={-6} max={18} step={0.1} unit="dB"
-          onChange={(v) => setProcessing(p => ({ ...p, compMakeup: v }))} />
+          onChange={(v) => set({ compMakeup: v })} />
       </div>
       <GainReductionMeter value={compGR} />
     </ModulePanel>

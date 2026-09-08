@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { MasteringEngine, loadMasteringWorklets } from '@/lib/audioEngine';
 import { analyzeAudio, type AudioMetrics } from '@/lib/audioAnalysis';
+import { analyzeMusicalContent, type MusicalContent } from '@/lib/musicAnalysis';
 
 export interface AudioFileInfo {
   name: string;
@@ -29,6 +30,11 @@ export interface ProcessingParams {
   compRelease: number;
   compKnee: number;
   compMakeup: number;
+  compMix: number;
+  compDetect: 'peak' | 'rms';
+  compMode: 'stereo' | 'ms' | 'dual';
+  compAutoRelease: boolean;
+  compAutoMakeup: boolean;
   // Multiband compressor (AudioWorklet) — [low, mid, high]
   mbEnabled: boolean;
   mbXover1: number;
@@ -84,6 +90,11 @@ const DEFAULT_PROCESSING: ProcessingParams = {
   compRelease: 100,
   compKnee: 6,
   compMakeup: 0,
+  compMix: 100,
+  compDetect: 'peak',
+  compMode: 'stereo',
+  compAutoRelease: false,
+  compAutoMakeup: false,
   mbEnabled: false,
   mbXover1: 120,
   mbXover2: 2500,
@@ -133,6 +144,8 @@ export interface AudioState {
   referenceBuffer: AudioBuffer | null;
   referenceMetrics: AudioMetrics | null;
   referenceName: string | null;
+  /** key + tempo, detected async after load */
+  musical: MusicalContent | null;
 }
 
 export type SnapshotSlot = 'A' | 'B' | 'C' | 'D';
@@ -172,7 +185,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [state, setState] = useState<AudioState>({
     file: null, fileInfo: null, audioBuffer: null,
     isPlaying: false, isLooping: false, currentTime: 0, duration: 0,
-    referenceBuffer: null, referenceMetrics: null, referenceName: null,
+    referenceBuffer: null, referenceMetrics: null, referenceName: null, musical: null,
   });
 
   const [processing, setProcessing] = useState<ProcessingParams>(DEFAULT_PROCESSING);
@@ -282,19 +295,21 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     });
     engine.bypassMidSideEQ(!p.msEnabled);
 
-    if (p.compEnabled) {
-      engine.setCompressor({
-        threshold: p.compThreshold,
-        ratio: p.compRatio,
-        attack: p.compAttack,
-        release: p.compRelease,
-        knee: p.compKnee,
-      });
-      engine.setMakeupGain(p.compMakeup);
-    } else {
-      engine.bypassCompressor(true);
-      engine.setMakeupGain(0);
-    }
+    engine.setCompressorFull({
+      threshold: p.compThreshold,
+      ratio: p.compRatio,
+      attack: p.compAttack,
+      release: p.compRelease,
+      knee: p.compKnee,
+      makeup: p.compMakeup,
+      mix: p.compMix,
+      detect: p.compDetect,
+      mode: p.compMode,
+      autoRelease: p.compAutoRelease,
+      autoMakeup: p.compAutoMakeup,
+    });
+    engine.setMakeupGain(p.compEnabled ? p.compMakeup : 0);
+    engine.bypassCompressor(!p.compEnabled);
 
     // Multiband compressor (worklet)
     engine.setMultiband({ xover1: p.mbXover1, xover2: p.mbXover2, bands: p.mbBands });
@@ -356,7 +371,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setState(prev => ({
       ...prev,
-      file, audioBuffer,
+      file, audioBuffer, musical: null,
       isPlaying: false, isLooping: false, currentTime: 0,
       duration: audioBuffer.duration,
       fileInfo: {
@@ -368,6 +383,11 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         channels: audioBuffer.numberOfChannels,
       },
     }));
+
+    // key + tempo detection (async, non-blocking)
+    analyzeMusicalContent(audioBuffer)
+      .then((musical) => setState(prev => (prev.audioBuffer === audioBuffer ? { ...prev, musical } : prev)))
+      .catch(() => {});
   }, [getCtxAndEngine]);
 
   const loadReference = useCallback(async (file: File) => {

@@ -33,6 +33,7 @@ const WORKLET_URLS = [
   '/worklets/mid-side-eq-processor.js',
   '/worklets/multiband-comp-processor.js',
   '/worklets/dynamics-eq-processor.js',
+  '/worklets/compressor-processor.js',
   '/worklets/lookahead-limiter-processor.js',
 ];
 
@@ -147,19 +148,40 @@ export async function renderProcessed(
     }
   }
 
-  // Compressor + makeup
+  // Compressor — deterministic worklet, native DynamicsCompressor as fallback
   if (p.compEnabled) {
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = p.compThreshold;
-    comp.ratio.value = p.compRatio;
-    comp.attack.value = p.compAttack / 1000;
-    comp.release.value = p.compRelease / 1000;
-    comp.knee.value = p.compKnee;
-    node.connect(comp);
-    const makeup = ctx.createGain();
-    makeup.gain.value = dbToGain(p.compMakeup);
-    comp.connect(makeup);
-    node = makeup;
+    let done = false;
+    if (hasWorklets) {
+      try {
+        const comp = new AudioWorkletNode(ctx, 'compressor-processor', {
+          numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
+          processorOptions: {
+            threshold: p.compThreshold, ratio: p.compRatio, attack: p.compAttack,
+            release: p.compRelease, knee: p.compKnee, makeup: p.compMakeup,
+            mix: p.compMix, detect: p.compDetect, mode: p.compMode,
+            autoRelease: p.compAutoRelease, autoMakeup: p.compAutoMakeup,
+          },
+        });
+        node.connect(comp);
+        node = comp;
+        done = true;
+      } catch (e) {
+        console.warn('[offlineRender] compressor worklet skipped', e);
+      }
+    }
+    if (!done) {
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = p.compThreshold;
+      comp.ratio.value = p.compRatio;
+      comp.attack.value = p.compAttack / 1000;
+      comp.release.value = p.compRelease / 1000;
+      comp.knee.value = p.compKnee;
+      node.connect(comp);
+      const makeup = ctx.createGain();
+      makeup.gain.value = dbToGain(p.compMakeup);
+      comp.connect(makeup);
+      node = makeup;
+    }
   }
 
   // Saturation
@@ -190,7 +212,8 @@ export async function renderProcessed(
 
   // Limiter — real lookahead true-peak limiter when available
   let latencySamples = 0;
-  if (p.compEnabled) latencySamples += compressorLatencySamples(buffer.sampleRate);
+  // the worklet compressor is zero-latency; only the native fallback adds delay
+  if (p.compEnabled && !hasWorklets) latencySamples += compressorLatencySamples(buffer.sampleRate);
   if (p.limiterEnabled) {
     let done = false;
     if (hasWorklets) {
