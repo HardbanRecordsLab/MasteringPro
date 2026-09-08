@@ -15,6 +15,8 @@
  *   - lookahead-limiter-processor (4x oversampled true-peak limiter, posts GR/TP/latency)
  */
 
+import { makeSaturationCurve, type SaturationMode } from '@/lib/saturationCurve';
+
 export interface MidSideEQParams {
   midLowGain: number; midMidGain: number; midHighGain: number;
   sideLowGain: number; sideMidGain: number; sideHighGain: number;
@@ -81,21 +83,6 @@ export function loadMasteringWorklets(ctx: AudioContext): Promise<void> {
 
 export function dbToGain(db: number): number {
   return Math.pow(10, db / 20);
-}
-
-function makeSaturationCurve(amount: number): Float32Array {
-  const samples = 8192;
-  const curve = new Float32Array(samples);
-  for (let i = 0; i < samples; i++) {
-    const x = (i * 2) / samples - 1;
-    if (amount <= 0) {
-      curve[i] = x;
-    } else {
-      const k = amount / 100;
-      curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
-    }
-  }
-  return curve;
 }
 
 export class MasteringEngine {
@@ -301,8 +288,8 @@ export class MasteringEngine {
 
     // Wave shaper (saturation/warmth)
     this.waveShaperNode = ctx.createWaveShaper();
-    this.waveShaperNode.curve = makeSaturationCurve(0);
-    this.waveShaperNode.oversample = '2x';
+    this.waveShaperNode.curve = makeSaturationCurve(0, 'tape');
+    this.waveShaperNode.oversample = '4x';
 
     // Stereo width matrix
     this.widthSplitter = ctx.createChannelSplitter(2);
@@ -689,8 +676,10 @@ export class MasteringEngine {
     this.ramp(this.makeupGainNode.gain, dbToGain(db));
   }
 
-  setSaturation(amount: number) {
-    this.waveShaperNode.curve = makeSaturationCurve(amount);
+  private _satMode: SaturationMode = 'tape';
+  setSaturation(amount: number, mode: SaturationMode = this._satMode) {
+    this._satMode = mode;
+    this.waveShaperNode.curve = makeSaturationCurve(amount, mode);
   }
 
   setStereoWidth(widthPercent: number) {

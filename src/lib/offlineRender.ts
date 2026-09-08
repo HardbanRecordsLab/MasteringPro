@@ -8,21 +8,7 @@
  */
 import type { ProcessingParams } from '@/contexts/AudioContext';
 import { limiterLatencySamples, compressorLatencySamples } from '@/lib/limiterConfig';
-
-function makeSaturationCurve(amount: number): Float32Array {
-  const samples = 8192;
-  const curve = new Float32Array(samples);
-  for (let i = 0; i < samples; i++) {
-    const x = (i * 2) / samples - 1;
-    if (amount <= 0) {
-      curve[i] = x;
-    } else {
-      const k = amount / 100;
-      curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
-    }
-  }
-  return curve;
-}
+import { makeSaturationCurve } from '@/lib/saturationCurve';
 
 function dbToGain(db: number) {
   return Math.pow(10, db / 20);
@@ -242,7 +228,7 @@ export async function renderProcessed(
   // Saturation
   if (p.saturationEnabled && p.saturation > 0) {
     const shaper = ctx.createWaveShaper();
-    shaper.curve = makeSaturationCurve(p.saturation);
+    shaper.curve = makeSaturationCurve(p.saturation, p.satMode);
     shaper.oversample = '4x';
     node.connect(shaper);
     node = shaper;

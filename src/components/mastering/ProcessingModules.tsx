@@ -762,20 +762,43 @@ const StereoCompModule = () => {
 
 const SaturationModule = () => {
   const { processing, setProcessing } = useAudio();
+  const set = (patch: Partial<typeof processing>) => setProcessing((p) => ({ ...p, ...patch }));
+  const pill = (on: boolean) =>
+    `text-[9px] font-mono px-1.5 py-0.5 rounded transition-colors ${on ? 'bg-primary/15 text-primary' : 'bg-secondary text-muted-foreground hover:text-foreground'}`;
+  const modes = [
+    ['tape', 'Tape'],
+    ['tube', 'Tube'],
+    ['transformer', 'Xfmr'],
+    ['clip', 'Clip'],
+  ] as const;
 
   return (
     <ModulePanel
       title="Saturation / Warmth"
       enabled={processing.saturationEnabled}
-      onToggle={() => setProcessing(p => ({ ...p, saturationEnabled: !p.saturationEnabled }))}
+      onToggle={() => set({ saturationEnabled: !processing.saturationEnabled })}
     >
+      <div className="flex flex-wrap gap-1 mb-2">
+        {modes.map(([m, label]) => (
+          <button key={m} onClick={() => set({ satMode: m })} className={pill(processing.satMode === m)}>
+            {label}
+          </button>
+        ))}
+      </div>
       <KnobControl
         label="Drive" value={processing.saturation}
         min={0} max={100} step={1} unit="%"
-        onChange={(v) => setProcessing(p => ({ ...p, saturation: v }))}
+        onChange={(v) => set({ saturation: v })}
       />
       <div className="mt-2 text-[8px] text-muted-foreground">
-        Soft-clip waveshaper with 2× oversampling
+        {processing.satMode === 'tube'
+          ? 'Asymmetric tube drive — 2nd-harmonic warmth'
+          : processing.satMode === 'transformer'
+            ? 'Cubic transformer knee — rounded top end'
+            : processing.satMode === 'clip'
+              ? 'Arctan hard-clip character'
+              : 'Tanh tape drive — odd-harmonic glue'}
+        , 4× oversampled
       </div>
     </ModulePanel>
   );

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { MasteringEngine, loadMasteringWorklets } from '@/lib/audioEngine';
+import type { SaturationMode } from '@/lib/saturationCurve';
 import { analyzeAudio, type AudioMetrics } from '@/lib/audioAnalysis';
 import { analyzeMusicalContent, type MusicalContent } from '@/lib/musicAnalysis';
 
@@ -66,6 +67,7 @@ export interface ProcessingParams {
   resoHighHz: number;
   saturation: number;
   saturationEnabled: boolean;
+  satMode: SaturationMode;
   widthEnabled: boolean;
   stereoWidth: number;
   limiterEnabled: boolean;
@@ -141,6 +143,7 @@ const DEFAULT_PROCESSING: ProcessingParams = {
   resoHighHz: 16000,
   saturation: 0,
   saturationEnabled: false,
+  satMode: 'tape',
   widthEnabled: true,
   stereoWidth: 100,
   limiterEnabled: true,
@@ -369,7 +372,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       highHz: p.resoHighHz,
     });
 
-    engine.setSaturation(p.saturationEnabled ? p.saturation : 0);
+    engine.setSaturation(p.saturationEnabled ? p.saturation : 0, p.satMode);
 
     if (p.widthEnabled) {
       engine.setStereoWidth(p.stereoWidth);

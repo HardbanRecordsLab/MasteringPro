@@ -4,6 +4,7 @@ import { FFT, hann } from '@/lib/fft';
 import { analyzeSpectrum } from '@/lib/spectrum';
 import { limiterLatencySamples } from '@/lib/limiterConfig';
 import { computeDynamicsMetrics } from '@/lib/dynamicsMetrics';
+import { makeSaturationCurve } from '@/lib/saturationCurve';
 
 /** Minimal AudioBuffer stand-in for the pure DSP functions. */
 function fakeBuffer(channels: Float32Array[], sampleRate: number): AudioBuffer {
@@ -139,6 +140,37 @@ describe('dynamics metrics', () => {
     const d = computeDynamicsMetrics(buf, measureLoudness(buf));
     expect(d.clipEvents).toBe(2); // one per channel
     expect(d.clippedSamples).toBe(20);
+  });
+});
+
+describe('saturation curves', () => {
+  const mid = (c: Float32Array) => c[c.length / 2]; // x = 0
+
+  it('is a clean pass-through at zero drive', () => {
+    const c = makeSaturationCurve(0, 'tape');
+    for (let i = 0; i < c.length; i += 97) {
+      const x = (i * 2) / c.length - 1;
+      expect(Math.abs(c[i] - x)).toBeLessThan(1e-6);
+    }
+  });
+
+  it('is monotonic and bounded for every mode', () => {
+    for (const m of ['tape', 'tube', 'transformer', 'clip'] as const) {
+      const c = makeSaturationCurve(80, m);
+      for (let i = 1; i < c.length; i++) expect(c[i]).toBeGreaterThanOrEqual(c[i - 1] - 1e-7);
+      for (let i = 0; i < c.length; i++) expect(Math.abs(c[i])).toBeLessThanOrEqual(1.05);
+    }
+  });
+
+  it('tape stays symmetric, tube is asymmetric (2nd-harmonic bias)', () => {
+    const tape = makeSaturationCurve(70, 'tape');
+    const tube = makeSaturationCurve(70, 'tube');
+    const at = (c: Float32Array, x: number) => c[Math.round(((x + 1) / 2) * (c.length - 1))];
+    // odd symmetry: f(x) ≈ -f(-x)
+    expect(Math.abs(at(tape, 0.6) + at(tape, -0.6))).toBeLessThan(0.02);
+    expect(Math.abs(at(tube, 0.6) + at(tube, -0.6))).toBeGreaterThan(0.02);
+    // near-zero the curve still passes signal ~unchanged
+    expect(Math.abs(mid(tape))).toBeLessThan(0.01);
   });
 });
 
