@@ -80,6 +80,15 @@ export const config = {
   },
 
   maxBodyBytes: num(process.env.MAX_BODY_BYTES, 256 * 1024),
+
+  // Stripe — same account/keys as Metadata Engine (shared, per 2026-09-23
+  // decision), credit packs defined in services/stripeBilling.js.
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    successUrl: process.env.STRIPE_SUCCESS_URL || '',
+    cancelUrl: process.env.STRIPE_CANCEL_URL || '',
+  },
 };
 
 export function assertConfig() {

@@ -24,7 +24,23 @@ export const users = pgTable('users', {
   passwordHash: text('password_hash').notNull(),
   displayName: text('display_name'),
   plan: text('plan').notNull().default('free'), // free | pro
+  // AI Mastering / Copilot run on real backend compute (OpenRouter), unlike the
+  // client-side DSP console, which stays free and unmetered. 3 free credits are
+  // granted at signup (see routes/auth.js) so a new account can try AI features
+  // before buying a pack; see services/stripeBilling.js for pack definitions.
+  credits: integer('credits').notNull().default(3),
   emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const creditPurchases = pgTable('credit_purchases', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  stripeSessionId: text('stripe_session_id').notNull().unique(),
+  packId: text('pack_id').notNull(),
+  creditsAdded: integer('credits_added').notNull(),
+  amountTotal: integer('amount_total'),
+  currency: text('currency'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
