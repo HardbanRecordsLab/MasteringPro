@@ -114,5 +114,5 @@ export async function requireUser(c, next) {
 }
 
 export function publicUser(u) {
-  return { id: u.id, email: u.email, displayName: u.displayName, plan: u.plan };
+  return { id: u.id, email: u.email, displayName: u.displayName, plan: u.plan, credits: u.credits ?? 0 };
 }

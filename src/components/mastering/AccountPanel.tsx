@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { User, LogOut, Loader2, Save, FolderOpen, Trash2 } from 'lucide-react';
+import { User, LogOut, Loader2, Save, FolderOpen, Trash2, Zap } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAudio } from '@/contexts/AudioContext';
-import { accountApi, type Project, ApiError } from '@/lib/accountApi';
+import { accountApi, billingApi, type Project, type CreditPack, ApiError } from '@/lib/accountApi';
 import { toast } from 'sonner';
 
 const AccountPanel = () => {
-  const { user, enabled, loading, login, register, logout } = useAuth();
+  const { user, enabled, loading, login, register, logout, refreshUser } = useAuth();
   const { state, processing, setProcessing } = useAudio();
 
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -14,11 +14,45 @@ const AccountPanel = () => {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [packs, setPacks] = useState<CreditPack[]>([]);
+  const [showPacks, setShowPacks] = useState(false);
+  const [checkingOut, setCheckingOut] = useState<string | null>(null);
 
   const refreshProjects = () => {
     if (user) accountApi.listProjects().then(setProjects).catch(() => {});
   };
   useEffect(refreshProjects, [user]);
+
+  // Back from a Stripe redirect: pick up the new balance and say so once.
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const billing = url.searchParams.get('billing');
+    if (!billing) return;
+    url.searchParams.delete('billing');
+    url.searchParams.delete('session_id');
+    window.history.replaceState({}, '', url.toString());
+    if (billing === 'success') {
+      refreshUser().then(() => toast.success('Płatność zaksięgowana — kredyty doładowane.'));
+    } else if (billing === 'cancelled') {
+      toast.info('Zakup anulowany — nic nie pobrano.');
+    }
+  }, [refreshUser]);
+
+  const buyPack = async (packId: string) => {
+    setCheckingOut(packId);
+    try {
+      const { checkout_url } = await billingApi.checkout(packId);
+      window.location.href = checkout_url;
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Nie udało się otworzyć płatności.');
+      setCheckingOut(null);
+    }
+  };
+
+  const openPacks = () => {
+    setShowPacks((v) => !v);
+    if (!packs.length) billingApi.listPacks().then((r) => setPacks(r.packs)).catch(() => {});
+  };
 
   if (loading) {
     return (
@@ -142,7 +176,44 @@ const AccountPanel = () => {
 
       {user && (
         <>
-          <div className="text-[10px] font-mono text-muted-foreground truncate">{user.email} · {user.plan}</div>
+          <div className="text-[10px] font-mono text-muted-foreground truncate">{user.email}</div>
+
+          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-primary/10">
+            <span className="flex items-center gap-1 text-xs font-medium text-primary">
+              <Zap className="w-3 h-3" /> {user.credits} {user.credits === 1 ? 'kredyt' : 'kredytów'} AI
+            </span>
+            <button onClick={openPacks} className="text-[10px] underline text-primary hover:text-primary/80">
+              {showPacks ? 'Ukryj' : 'Dokup'}
+            </button>
+          </div>
+
+          {showPacks && (
+            <div className="space-y-1">
+              {packs.length === 0 && (
+                <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 py-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Ładowanie pakietów…
+                </div>
+              )}
+              {packs.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => buyPack(p.id)}
+                  disabled={!p.available || checkingOut !== null}
+                  title={!p.available ? 'Ten pakiet nie jest jeszcze dostępny' : undefined}
+                  className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-[10px] disabled:opacity-40 ${
+                    p.popular ? 'bg-primary/15 text-primary' : 'bg-secondary text-foreground hover:bg-secondary/70'
+                  }`}
+                >
+                  <span className="flex items-center gap-1">
+                    {checkingOut === p.id && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {p.name} · {p.credits} kr.
+                  </span>
+                  <span className="font-mono font-semibold">{p.price_pln} zł</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <button
             onClick={saveProject}
             disabled={busy || !state.fileInfo}

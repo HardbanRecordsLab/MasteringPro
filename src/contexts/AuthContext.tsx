@@ -10,6 +10,8 @@ interface AuthState {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** Re-fetches the current user (credits balance changes after a purchase or an AI run). */
+  refreshUser: () => Promise<void>;
 }
 
 const Ctx = createContext<AuthState | null>(null);
@@ -55,9 +57,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await accountApi.logout().catch(() => {});
     setUser(null);
   }, []);
+  const refreshUser = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      setUser(await accountApi.me());
+    } catch {
+      /* session may have expired — leave existing state, next call will 401 and log out naturally */
+    }
+  }, [enabled]);
 
   return (
-    <Ctx.Provider value={{ user, enabled, loading, login, register, logout }}>
+    <Ctx.Provider value={{ user, enabled, loading, login, register, logout, refreshUser }}>
       {children}
     </Ctx.Provider>
   );

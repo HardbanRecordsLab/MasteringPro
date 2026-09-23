@@ -12,6 +12,19 @@ export interface Account {
   email: string;
   displayName: string | null;
   plan: 'free' | 'pro';
+  /** AI Mastering / Copilot credits remaining. The manual DSP console never spends these. */
+  credits: number;
+}
+
+export interface CreditPack {
+  id: string;
+  name: string;
+  credits: number;
+  price_pln: number;
+  description: string;
+  popular: boolean;
+  /** false until STRIPE_PRICE_PACK_* is configured on the server for this pack. */
+  available: boolean;
 }
 
 export interface Project {
@@ -99,4 +112,14 @@ export const accountApi = {
   savePreset: (name: string, chainParams: Record<string, unknown>, genre?: string) =>
     req('/api/presets', { method: 'POST', body: JSON.stringify({ name, chainParams, genre }) }),
   deletePreset: (id: string) => req<{ ok: true }>(`/api/presets/${id}`, { method: 'DELETE' }),
+};
+
+export const billingApi = {
+  listPacks: () =>
+    req<{ packs: CreditPack[]; stripe_enabled: boolean; currency: string }>('/api/billing/packs'),
+  checkout: (packId: string) =>
+    req<{ checkout_url: string; session_id: string }>('/api/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ pack_id: packId }),
+    }),
 };
