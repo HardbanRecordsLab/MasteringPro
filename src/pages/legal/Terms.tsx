@@ -3,7 +3,7 @@ import LegalLayout from '@/components/site/LegalLayout';
 const Terms = () => (
   <LegalLayout
     title="Regulamin"
-    updated="23.08.2026"
+    updated="23.09.2026"
     intro="Zasady korzystania z aplikacji MasteringPro."
   >
     <section>
@@ -41,7 +41,41 @@ const Terms = () => (
     </section>
 
     <section>
-      <h2>5. Dostępność</h2>
+      <h2>5. Darmowa konsola i płatne kredyty AI</h2>
+      <p>
+        Manualna konsola mastering (EQ, kompresja wielopasmowa, limiter, mid/side, saturacja,
+        metering, render) jest darmowa i bez limitu, w każdej wersji aplikacji, bez konieczności
+        zakładania konta. Płacisz wyłącznie za funkcje AI działające na naszym serwerze — generowanie
+        łańcucha mastering, walidację QA, dopasowanie do utworu referencyjnego oraz czat z Copilotem —
+        rozliczane w systemie kredytowym.
+      </p>
+      <p>
+        Nowe konto otrzymuje 3 darmowe kredyty AI do wypróbowania. Kolejne kredyty kupuje się w
+        pakietach jednorazowych (Starter, Producer, Label, Studio), bez abonamentu — kredyty nie
+        wygasają. Płatność realizowana jest wyłącznie za pośrednictwem operatora płatności Stripe;
+        nie przechowujemy danych kart płatniczych na naszych serwerach. Aktualne pakiety i ceny
+        widoczne są w aplikacji i na stronie cennika przed zakupem.
+      </p>
+    </section>
+
+    <section>
+      <h2>6. Zwroty i odstąpienie od umowy</h2>
+      <p>
+        Zgodnie z ustawą o prawach konsumenta, konsumentowi przysługuje prawo odstąpienia od umowy
+        zawartej na odległość w terminie 14 dni bez podania przyczyny — w zakresie, w jakim dotyczy to
+        niewykorzystanych kredytów. Prawo to nie przysługuje w odniesieniu do kredytów już
+        wykorzystanych: w chwili uruchomienia przebiegu AI Mastering (co następuje na wyraźne żądanie
+        użytkownika, ze świadomością utraty prawa odstąpienia w tym zakresie) usługa cyfrowa zostaje
+        wykonana, a odpowiadający jej kredyt nie podlega zwrotowi.
+      </p>
+      <p>
+        W sprawie zwrotu niewykorzystanych kredytów skontaktuj się pod adresem
+        contact@hardbanrecordslab.online.
+      </p>
+    </section>
+
+    <section>
+      <h2>7. Dostępność</h2>
       <p>
         Nie gwarantujemy nieprzerwanej dostępności usługi. Funkcje mogą być zmieniane, ograniczane
         lub wyłączane, w szczególności w okresie rozwoju aplikacji.
@@ -49,7 +83,7 @@ const Terms = () => (
     </section>
 
     <section>
-      <h2>6. Odpowiedzialność</h2>
+      <h2>8. Odpowiedzialność</h2>
       <p>
         Usługa udostępniana jest „tak jak jest”. W zakresie dozwolonym przez prawo nie odpowiadamy za
         utratę danych, utracone korzyści ani skutki decyzji produkcyjnych podjętych na podstawie
@@ -58,7 +92,7 @@ const Terms = () => (
     </section>
 
     <section>
-      <h2>7. Zmiany regulaminu</h2>
+      <h2>9. Zmiany regulaminu</h2>
       <p>
         Zmiany publikujemy na tej stronie. Korzystanie z usługi po ich opublikowaniu oznacza
         akceptację nowej wersji.
