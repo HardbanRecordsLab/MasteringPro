@@ -1,48 +1,19 @@
 import LegalLayout from '@/components/site/LegalLayout';
 
-const rows = [
-  {
-    name: 'Dostawca hostingu aplikacji',
-    purpose: 'Serwowanie strony i zasobów statycznych',
-    data: 'Adres IP, dane techniczne żądania',
-  },
-  {
-    name: 'Dostawca backendu (baza, funkcje brzegowe)',
-    purpose: 'Obsługa funkcji AI i limitów zapytań',
-    data: 'Metryki audio, ustawienia DSP, adres IP, User-Agent',
-  },
-  {
-    name: 'Dostawca modeli AI',
-    purpose: 'Generowanie sugestii masteringu i odpowiedzi Copilota',
-    data: 'Metryki audio, ustawienia DSP, treść wiadomości',
-  },
-];
-
 const Subprocessors = () => (
-  <LegalLayout
-    title="Podprocesorzy"
-    updated="23.08.2026"
-    intro="Kategorie dostawców wspierających działanie MasteringPro oraz zakres danych, które przetwarzają."
-  >
+  <LegalLayout title="Podmioty przetwarzające" updated="11.10.2026" intro="Dostawcy, którzy pomagają świadczyć MasteringPro.">
     <section>
-      <h2>Wykaz kategorii</h2>
-      <div className="space-y-3">
-        {rows.map((r) => (
-          <div key={r.name} className="inset-well p-4 space-y-1">
-            <div className="font-display text-sm font-semibold text-foreground">{r.name}</div>
-            <p>Cel: {r.purpose}</p>
-            <p>Zakres danych: {r.data}</p>
-          </div>
-        ))}
-      </div>
+      <h2>Wykaz</h2>
+      <ul>
+        <li>Vercel Inc. (USA) — hosting interfejsu.</li>
+        <li>Contabo GmbH (Niemcy) — serwer z kontami, limitami i funkcjami AI.</li>
+        <li>OpenRouter, Inc. (USA) — dostęp do modeli AI (metryki, ustawienia, wiadomości).</li>
+        <li>Stripe Payments Europe, Limited (Irlandia) — płatności za kredyty.</li>
+      </ul>
     </section>
-
     <section>
-      <h2>Aktualizacje wykazu</h2>
-      <p>
-        Zmiany listy publikujemy na tej stronie. Jeśli potrzebujesz nazw konkretnych podmiotów na
-        potrzeby własnej dokumentacji, napisz do nas przez stronę Kontakt.
-      </p>
+      <h2>Więcej</h2>
+      <p>Pełna lista dla całej platformy i podstawy przekazania danych poza EOG są w Polityce prywatności.</p>
     </section>
   </LegalLayout>
 );

@@ -5,6 +5,36 @@ import SiteFooter from '@/components/site/SiteFooter';
 import { BrandMark, Wordmark } from '@/components/Brand';
 import { Seo } from '@/components/Seo';
 
+// Dokumenty prawne są wspólne dla całej platformy HardbanRecords Lab (jedno źródło na
+// hardbanrecordslab.online). Strony /legal/* MasteringPro to tylko skróty dla tej aplikacji.
+const SITE = 'https://hardbanrecordslab.online';
+export const SHARED_DOCS = [
+  { href: `${SITE}/terms/`, label: 'Regulamin' },
+  { href: `${SITE}/privacy/`, label: 'Polityka prywatności' },
+  { href: `${SITE}/cookies/`, label: 'Polityka cookies' },
+];
+
+const SharedDocs = () => (
+  <div className="space-y-2">
+    <p className="text-xs text-muted-foreground">
+      MasteringPro jest częścią HardbanRecords Lab (Kamil Skomra). Pełne, wiążące dokumenty:
+    </p>
+    <div className="flex flex-wrap gap-2">
+      {SHARED_DOCS.map((d) => (
+        <a
+          key={d.href}
+          href={d.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs px-3 py-1.5 rounded-md border border-border hover:bg-card/60"
+        >
+          {d.label} ↗
+        </a>
+      ))}
+    </div>
+  </div>
+);
+
 interface LegalLayoutProps {
   title: string;
   updated: string;
@@ -43,10 +73,7 @@ const LegalLayout = ({ title, updated, intro, children }: LegalLayoutProps) => (
         <div className="panel p-6 sm:p-8 space-y-6 [&_h2]:font-display [&_h2]:text-lg [&_h2]:font-semibold [&_p]:text-sm [&_p]:text-muted-foreground [&_p]:leading-relaxed [&_li]:text-sm [&_li]:text-muted-foreground [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1.5 [&_section]:space-y-2">
           {children}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Ten dokument ma charakter informacyjny i nie stanowi porady prawnej. Przed publicznym
-          udostępnieniem usługi warto skonsultować treść z prawnikiem.
-        </p>
+        <SharedDocs />
       </article>
     </main>
 
