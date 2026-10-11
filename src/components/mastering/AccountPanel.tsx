@@ -17,6 +17,9 @@ const AccountPanel = () => {
   const [packs, setPacks] = useState<CreditPack[]>([]);
   const [showPacks, setShowPacks] = useState(false);
   const [checkingOut, setCheckingOut] = useState<string | null>(null);
+  // Art. 38 ust. 1 pkt 13 ustawy o prawach konsumenta: kredyty to treść cyfrowa dostarczana od razu —
+  // prawo odstąpienia wygasa tylko za wyraźną, uprzednią zgodą. Bez zaznaczenia nie ma zakupu.
+  const [waiverAccepted, setWaiverAccepted] = useState(false);
 
   const refreshProjects = () => {
     if (user) accountApi.listProjects().then(setProjects).catch(() => {});
@@ -39,6 +42,10 @@ const AccountPanel = () => {
   }, [refreshUser]);
 
   const buyPack = async (packId: string) => {
+    if (!waiverAccepted) {
+      toast.error('Zaznacz zgodę na natychmiastowe dostarczenie kredytów.');
+      return;
+    }
     setCheckingOut(packId);
     try {
       const { checkout_url } = await billingApi.checkout(packId);
@@ -189,6 +196,14 @@ const AccountPanel = () => {
 
           {showPacks && (
             <div className="space-y-1">
+              <label className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-snug cursor-pointer">
+                <input type="checkbox" checked={waiverAccepted} onChange={(e) => setWaiverAccepted(e.target.checked)} className="mt-0.5 shrink-0" />
+                <span>
+                  Żądam dostarczenia kredytów od razu po zapłacie i przyjmuję do wiadomości, że tracę wtedy prawo odstąpienia.
+                  Akceptuję{' '}
+                  <a href="https://hardbanrecordslab.online/terms/" target="_blank" rel="noopener noreferrer" className="underline">Regulamin</a>.
+                </span>
+              </label>
               {packs.length === 0 && (
                 <div className="text-[10px] text-muted-foreground flex items-center gap-1.5 py-1">
                   <Loader2 className="w-3 h-3 animate-spin" /> Ładowanie pakietów…
@@ -198,7 +213,7 @@ const AccountPanel = () => {
                 <button
                   key={p.id}
                   onClick={() => buyPack(p.id)}
-                  disabled={!p.available || checkingOut !== null}
+                  disabled={!p.available || checkingOut !== null || !waiverAccepted}
                   title={!p.available ? 'Ten pakiet nie jest jeszcze dostępny' : undefined}
                   className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm text-[10px] disabled:opacity-40 ${
                     p.popular ? 'bg-primary/15 text-primary' : 'bg-secondary text-foreground hover:bg-secondary/70'
