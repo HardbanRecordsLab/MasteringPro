@@ -11,7 +11,7 @@ import { config } from "./config.js";
  * @param {boolean} [opts.jsonMode]
  */
 export async function chat({ messages, maxTokens = 2000, temperature = 0.3, jsonMode = config.ai.jsonMode }) {
-  const { baseUrl, apiKey, model, models, appUrl, appTitle, timeoutMs } = config.ai;
+  const { baseUrl, apiKey, model, models, appUrl, appTitle, timeoutMs, dataCollection } = config.ai;
 
   const headers = {
     "Content-Type": "application/json",
@@ -31,6 +31,8 @@ export async function chat({ messages, maxTokens = 2000, temperature = 0.3, json
     };
     // OpenRouter: automatic fallback across a model list.
     if (models.length > 0) body.models = models;
+    // OpenRouter-only routing preference (other providers don't know it).
+    if (dataCollection && baseUrl.includes("openrouter.ai")) body.provider = { data_collection: dataCollection };
     if (withJson) body.response_format = { type: "json_object" };
     return JSON.stringify(body);
   };

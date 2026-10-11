@@ -48,20 +48,24 @@ export const config = {
     // OpenAI-compatible chat-completions endpoint. OpenRouter by default.
     baseUrl: (process.env.AI_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
     apiKey: process.env.AI_API_KEY || "",
-    // Primary model — a strong free model by default.
-    model: process.env.AI_MODEL || "deepseek/deepseek-chat-v3-0324:free",
+    // Primary model — cheap paid model (fractions of a cent per master).
+    model: process.env.AI_MODEL || "deepseek/deepseek-chat-v3-0324",
     // OpenRouter fallback chain: tried in order when the primary is down / rate
-    // limited / out of credits. Default = free first, then the cheapest capable
-    // paid model (fractions of a cent per master). Override with AI_MODELS.
+    // limited / out of credits. Override with AI_MODELS.
     // OpenRouter caps this list at 3 entries — enforced with slice().
+    // No ":free" models: they have no providers that skip prompt storage/training,
+    // so they never match dataCollection = "deny" below.
     models: (list(process.env.AI_MODELS).length
       ? list(process.env.AI_MODELS)
       : [
-          "deepseek/deepseek-chat-v3-0324:free",
-          "meta-llama/llama-3.3-70b-instruct:free",
+          "deepseek/deepseek-chat-v3-0324",
+          "meta-llama/llama-3.3-70b-instruct",
           "google/gemini-2.5-flash-lite",
         ]
     ).slice(0, 3),
+    // OpenRouter provider data policy: "deny" = only providers that do not store
+    // or train on prompts (user messages to the copilot). Empty = provider default.
+    dataCollection: process.env.AI_DATA_COLLECTION ?? "deny",
     // Ask the model for strict JSON. Disable if your model rejects response_format.
     jsonMode: bool(process.env.AI_JSON_MODE, true),
     // Sent to OpenRouter for dashboard attribution (optional).
