@@ -37,6 +37,13 @@ const Header = () => {
               )}
             </div>
           )}
+          <a
+            href="https://hardbanrecordslab.online/"
+            className="hidden sm:inline text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground"
+            title="hardbanrecordslab.online"
+          >
+            ← Hardban Records Lab
+          </a>
           <ModeSelector />
           <div className="hidden lg:flex items-center gap-2">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />

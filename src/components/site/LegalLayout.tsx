@@ -9,6 +9,7 @@ import { Seo } from '@/components/Seo';
 // hardbanrecordslab.online). Strony /legal/* MasteringPro to tylko skróty dla tej aplikacji.
 const SITE = 'https://hardbanrecordslab.online';
 export const SHARED_DOCS = [
+  { href: `${SITE}/`, label: 'Strona główna HardbanRecords Lab' },
   { href: `${SITE}/terms/`, label: 'Regulamin' },
   { href: `${SITE}/privacy/`, label: 'Polityka prywatności' },
   { href: `${SITE}/cookies/`, label: 'Polityka cookies' },
