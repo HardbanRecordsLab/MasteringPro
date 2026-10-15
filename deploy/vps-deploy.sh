@@ -23,7 +23,9 @@ echo "▶ pulling latest"
 git pull --ff-only
 
 # --- database (idempotent) --------------------------------------------------
-PGPW="${HBRL_DB_PASSWORD:-HRL.ks.84}"
+# psql runs inside the hbrl-postgres container over the local socket - no password needed.
+# Never put a password default here (this repo is public).
+PGPW="${HBRL_DB_PASSWORD:-}"
 if ! docker exec -e PGPASSWORD="$PGPW" hbrl-postgres \
       psql -U hbrl_admin -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='masteringpro'" | grep -q 1; then
   echo "▶ creating database masteringpro"

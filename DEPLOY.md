@@ -43,7 +43,7 @@ Set:
 ```ini
 AI_API_KEY=sk-or-v1-...                       # OpenRouter
 ALLOWED_ORIGINS=https://masteringpro.hardbanrecordslab.online
-DATABASE_URL=postgresql://hbrl_admin:HRL.ks.84@hbrl-postgres:5432/masteringpro
+DATABASE_URL=postgresql://<user>:<password>@hbrl-postgres:5432/masteringpro
 NODE_ENV=production
 COOKIE_SECURE=true
 ```
