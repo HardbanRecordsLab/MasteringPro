@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Save, RotateCcw, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import ModulePanel, { KnobControl, GainReductionMeter } from './ModulePanel';
+import MultibandModule from './MultibandModule';
 import { useAudio } from '@/contexts/AudioContext';
 import {
   loadGatePresets,
@@ -484,67 +485,7 @@ function generateEQCurve(bands: { freq: number; gain: number; q: number }[]): st
   return points.join(' ');
 }
 
-const BAND_LABELS = ['Low', 'Mid', 'High'] as const;
-
-const MultibandCompModule = () => {
-  const { processing, setProcessing, engine, state } = useAudio();
-  const [gr, setGr] = useState<number[]>([0, 0, 0]);
-  const rafRef = useRef(0);
-
-  const active = state.isPlaying && processing.mbEnabled;
-  useEffect(() => {
-    if (!engine || !active) { setGr([0, 0, 0]); return; }
-    const tick = () => {
-      setGr(engine.getMultibandGR());
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [engine, active]);
-
-  const setBand = (i: number, key: string, v: number) =>
-    setProcessing((p) => ({
-      ...p,
-      mbBands: p.mbBands.map((b, j) => (j === i ? { ...b, [key]: v } : b)),
-    }));
-
-  return (
-    <ModulePanel
-      title="Multiband Comp"
-      enabled={processing.mbEnabled}
-      onToggle={() => setProcessing((p) => ({ ...p, mbEnabled: !p.mbEnabled }))}
-    >
-      <div className="grid grid-cols-2 gap-2 mb-3">
-        <KnobControl
-          label="XOver Lo/Mid" value={processing.mbXover1} min={40} max={600} unit="Hz"
-          onChange={(v) => setProcessing((p) => ({ ...p, mbXover1: v }))}
-        />
-        <KnobControl
-          label="XOver Mid/Hi" value={processing.mbXover2} min={800} max={9000} unit="Hz"
-          onChange={(v) => setProcessing((p) => ({ ...p, mbXover2: v }))}
-        />
-      </div>
-      {processing.mbBands.map((band, i) => (
-        <div key={BAND_LABELS[i]} className="mb-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] uppercase text-muted-foreground tracking-wider">{BAND_LABELS[i]}</span>
-            <span className="text-[8px] font-mono text-primary">{(gr[i] ?? 0).toFixed(1)} dB GR</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2 mt-1">
-            <KnobControl label="Thresh" value={band.threshold} min={-48} max={0} step={0.5} unit="dB" onChange={(v) => setBand(i, 'threshold', v)} />
-            <KnobControl label="Ratio" value={band.ratio} min={1} max={12} step={0.1} onChange={(v) => setBand(i, 'ratio', v)} />
-            <KnobControl label="Makeup" value={band.makeup} min={-6} max={12} step={0.1} unit="dB" onChange={(v) => setBand(i, 'makeup', v)} />
-          </div>
-          <div className="grid grid-cols-2 gap-2 mt-1">
-            <KnobControl label="Attack" value={band.attack} min={1} max={100} step={1} unit="ms" onChange={(v) => setBand(i, 'attack', v)} />
-            <KnobControl label="Release" value={band.release} min={20} max={800} step={5} unit="ms" onChange={(v) => setBand(i, 'release', v)} />
-          </div>
-          <GainReductionMeter value={gr[i] ?? 0} />
-        </div>
-      ))}
-    </ModulePanel>
-  );
-};
+const MultibandCompModule = MultibandModule;
 
 const UtilityModule = () => {
   const { processing, setProcessing } = useAudio();

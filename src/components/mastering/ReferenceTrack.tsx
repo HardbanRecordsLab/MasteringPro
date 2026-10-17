@@ -1,36 +1,16 @@
 import { useState, useRef } from 'react';
-import { Upload, Crosshair, Loader2, X, Music2, SlidersHorizontal } from 'lucide-react';
+import { Upload, Crosshair, Loader2, X, Music2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAudio } from '@/contexts/AudioContext';
 import { analyzeAudio } from '@/lib/audioAnalysis';
-import { matchToReference } from '@/lib/referenceMatch';
+import MatchPanel from './MatchPanel';
 import { invokeAI } from '@/lib/aiApi';
 import { toast } from 'sonner';
 
 const ReferenceTrack = () => {
-  const { state, loadReference, setProcessing, processing } = useAudio();
+  const { state, loadReference, setProcessing } = useAudio();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isMatching, setIsMatching] = useState(false);
-  const [isSpectral, setIsSpectral] = useState(false);
-
-  const handleSpectralMatch = () => {
-    if (!state.audioBuffer || !state.referenceBuffer) return;
-    setIsSpectral(true);
-    try {
-      const r = matchToReference(state.audioBuffer, state.referenceBuffer, processing.eqBands);
-      setProcessing((p) => ({ ...p, eqEnabled: true, eqBands: r.eqBands }));
-      toast.success(
-        r.moves.length
-          ? `Matched EQ: ${r.moves.join(', ')} · ref is ${r.lufsDelta > 0 ? '+' : ''}${r.lufsDelta} LU`
-          : `Already close to the reference (${r.lufsDelta > 0 ? '+' : ''}${r.lufsDelta} LU)`,
-      );
-    } catch (e) {
-      toast.error('Spectral match failed');
-      console.error(e);
-    } finally {
-      setIsSpectral(false);
-    }
-  };
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -137,17 +117,7 @@ const ReferenceTrack = () => {
           </div>
 
           <div className="grid grid-cols-1 gap-1.5">
-            <Button
-              className="w-full gap-2"
-              onClick={handleSpectralMatch}
-              disabled={!state.audioBuffer || !state.referenceBuffer || isSpectral}
-            >
-              {isSpectral ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Analysing…</>
-              ) : (
-                <><SlidersHorizontal className="w-4 h-4" /> Spectral Match (EQ curve)</>
-              )}
-            </Button>
+            <MatchPanel />
             <Button
               variant="secondary"
               className="w-full gap-2"

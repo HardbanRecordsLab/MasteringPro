@@ -1,3 +1,4 @@
+import { DEFAULT_BANDS_5, DEFAULT_XOVERS_5, resolveMultiband, type MultibandBandParams } from '@/lib/multiband';
 import { decodeNative } from '@/lib/audioDecode';
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { MasteringEngine, loadMasteringWorklets } from '@/lib/audioEngine';
@@ -43,11 +44,20 @@ export interface ProcessingParams {
   compMode: 'stereo' | 'ms' | 'dual';
   compAutoRelease: boolean;
   compAutoMakeup: boolean;
-  // Multiband compressor (AudioWorklet) — [low, mid, high]
+  // Match EQ (minimum-phase FIR): curve from the reference matcher, amount in %
+  matchEnabled?: boolean;
+  matchCurve?: { f: number[]; g: number[] } | null;
+  matchAmount?: number;
+  // Multiband compressor 2.0 (AudioWorklet): 3 bands (classic, crossovers mbXover1/2) or 5 bands (crossovers mbXovers)
   mbEnabled: boolean;
   mbXover1: number;
   mbXover2: number;
-  mbBands: { threshold: number; ratio: number; attack: number; release: number; knee: number; makeup: number }[];
+  mbBands: MultibandBandParams[];
+  mbXovers?: number[];
+  /** parallel mix, % */
+  mbMix?: number;
+  /** lookahead, ms (adds the same latency to the dry path) */
+  mbLookahead?: number;
   // De-esser + dynamic EQ band (AudioWorklet)
   deEssEnabled: boolean;
   deEssFreq: number;
@@ -117,14 +127,16 @@ export const DEFAULT_PROCESSING: ProcessingParams = {
   compMode: 'stereo',
   compAutoRelease: false,
   compAutoMakeup: false,
+  matchEnabled: false,
+  matchCurve: null,
+  matchAmount: 100,
   mbEnabled: false,
   mbXover1: 120,
   mbXover2: 2500,
-  mbBands: [
-    { threshold: -24, ratio: 2, attack: 20, release: 200, knee: 6, makeup: 0 },
-    { threshold: -20, ratio: 2, attack: 15, release: 150, knee: 6, makeup: 0 },
-    { threshold: -18, ratio: 2, attack: 10, release: 120, knee: 6, makeup: 0 },
-  ],
+  mbBands: DEFAULT_BANDS_5,
+  mbXovers: DEFAULT_XOVERS_5,
+  mbMix: 100,
+  mbLookahead: 0,
   deEssEnabled: false,
   deEssFreq: 6500,
   deEssThreshold: -28,
@@ -309,6 +321,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     engine.setInputGain(p.inputGain);
     engine.setLowCut(p.lowCutEnabled, p.lowCutFreq);
     engine.setTilt(p.tiltEnabled, p.tiltAmount);
+    engine.setMatchEq(p.matchEnabled ? (p.matchCurve ?? null) : null, (p.matchAmount ?? 100) / 100);
     engine.setBassMono(p.bassMonoEnabled, p.bassMonoFreq);
 
     // Noise gate (worklet)
@@ -353,7 +366,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     engine.bypassCompressor(!p.compEnabled);
 
     // Multiband compressor (worklet)
-    engine.setMultiband({ xover1: p.mbXover1, xover2: p.mbXover2, bands: p.mbBands });
+    engine.setMultiband(resolveMultiband(p));
     engine.bypassMultiband(!p.mbEnabled);
 
     // De-esser / dynamic EQ (worklet)

@@ -9,6 +9,8 @@
 import type { ProcessingParams } from '@/contexts/AudioContext';
 import { limiterLatencySamples, compressorLatencySamples } from '@/lib/limiterConfig';
 import { makeSaturationCurve } from '@/lib/saturationCurve';
+import { multibandLatencySamples, resolveMultiband } from '@/lib/multiband';
+import { designMinPhaseFir } from '@/lib/dsp/matchEq';
 
 function dbToGain(db: number) {
   return Math.pow(10, db / 20);
@@ -106,6 +108,18 @@ export async function renderProcessed(
     node.connect(lo); lo.connect(hi); node = hi;
   }
 
+  // Match EQ — minimum-phase FIR designed at the render rate (same curve and amount as the realtime engine)
+  if (p.matchEnabled && p.matchCurve && (p.matchAmount ?? 100) > 0) {
+    const conv = ctx.createConvolver();
+    conv.normalize = false;
+    const ir = designMinPhaseFir(p.matchCurve, (p.matchAmount ?? 100) / 100, buffer.sampleRate);
+    const irBuf = ctx.createBuffer(1, ir.length, buffer.sampleRate);
+    irBuf.copyToChannel(ir as Float32Array<ArrayBuffer>, 0);
+    conv.buffer = irBuf;
+    node.connect(conv);
+    node = conv;
+  }
+
   // Bass mono-maker (worklet)
   if (hasWorklets && p.bassMonoEnabled) {
     try {
@@ -158,15 +172,18 @@ export async function renderProcessed(
     }
   }
 
-  // Multiband compressor (worklet)
+  // Multiband compressor 2.0 (worklet). Lookahead delays wet and dry alike, so it is compensated like the limiter latency.
+  let mbLatency = 0;
   if (hasWorklets && p.mbEnabled) {
     try {
+      const cfg = resolveMultiband(p);
       const mb = new AudioWorkletNode(ctx, 'multiband-comp-processor', {
         numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2],
-        processorOptions: { xover1: p.mbXover1, xover2: p.mbXover2, bands: p.mbBands },
+        processorOptions: { xovers: cfg.xovers, bands: cfg.bands, mix: cfg.mix, lookahead: cfg.lookahead },
       });
       node.connect(mb);
       node = mb;
+      mbLatency = multibandLatencySamples(cfg.lookahead, buffer.sampleRate);
     } catch (e) {
       console.warn('[offlineRender] multiband skipped', e);
     }
@@ -252,7 +269,7 @@ export async function renderProcessed(
   }
 
   // Limiter — real lookahead true-peak limiter when available
-  let latencySamples = resoLatency;
+  let latencySamples = resoLatency + mbLatency;
   // the worklet compressor is zero-latency; only the native fallback adds delay
   if (p.compEnabled && !hasWorklets) latencySamples += compressorLatencySamples(buffer.sampleRate);
   if (p.limiterEnabled) {

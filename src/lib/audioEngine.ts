@@ -16,6 +16,8 @@
  */
 
 import { makeSaturationCurve, type SaturationMode } from '@/lib/saturationCurve';
+import type { MultibandBandParams, MultibandConfig } from '@/lib/multiband';
+import { designMinPhaseFir, type MatchCurve } from '@/lib/dsp/matchEq';
 
 export interface MidSideEQParams {
   midLowGain: number; midMidGain: number; midHighGain: number;
@@ -29,12 +31,8 @@ export interface NoiseGateParams {
   threshold: number; range: number; attack: number; hold: number; release: number;
 }
 
-export interface MultibandBand {
-  threshold: number; ratio: number; attack: number; release: number; knee: number; makeup: number;
-}
-export interface MultibandParams {
-  xover1: number; xover2: number; bands: MultibandBand[];
-}
+export type MultibandBand = MultibandBandParams;
+export type MultibandParams = MultibandConfig;
 
 export interface DynamicsEqParams {
   deEss: { enabled: boolean; freq: number; threshold: number; range: number; attack: number; release: number };
@@ -122,7 +120,9 @@ export class MasteringEngine {
   multibandDry: GainNode;
   multibandInputBus: GainNode;
   multibandOutputBus: GainNode;
-  private _mbGR: number[] = [0, 0, 0];
+  private _mbGR: number[] = [0, 0, 0, 0, 0];
+  private _mbLvl: number[] = [-120, -120, -120, -120, -120];
+  private _mbMonitor = -1;
   private _mbParams: MultibandParams | null = null;
 
   dynEqNode: AudioWorkletNode | null = null;
@@ -149,6 +149,15 @@ export class MasteringEngine {
   compOutputBus: GainNode;
   private _compGR = 0;
   private _compParams: CompressorParams | null = null;
+
+  // Match EQ: a minimum-phase FIR (ConvolverNode). Two convolvers are cross-faded so moving the amount never clicks.
+  matchInputBus: GainNode;
+  matchOutputBus: GainNode;
+  matchDry: GainNode;
+  private matchConv: [ConvolverNode, ConvolverNode];
+  private matchGain: [GainNode, GainNode];
+  private _matchActive = 0;
+  private _matchKey = '';
 
   // Stereo width
   widthSplitter: ChannelSplitterNode;
@@ -234,6 +243,15 @@ export class MasteringEngine {
       this.createEQ('peaking', 4000, 0, 1.0),
       this.createEQ('highshelf', 12000, 0, 0.7),
     ];
+
+    // Match EQ buses + the two cross-faded convolvers
+    this.matchInputBus = ctx.createGain();
+    this.matchOutputBus = ctx.createGain();
+    this.matchDry = ctx.createGain();
+    this.matchConv = [ctx.createConvolver(), ctx.createConvolver()];
+    this.matchConv.forEach((c) => { c.normalize = false; });
+    this.matchGain = [ctx.createGain(), ctx.createGain()];
+    this.matchGain.forEach((g) => { g.gain.value = 0; });
 
     // Mid/Side EQ wet/dry buses
     this.midSideInputBus = ctx.createGain();
@@ -371,6 +389,7 @@ export class MasteringEngine {
         });
         this.multibandNode.port.onmessage = (e) => {
           if (Array.isArray(e.data?.gr)) this._mbGR = e.data.gr;
+          if (Array.isArray(e.data?.lvl)) this._mbLvl = e.data.lvl;
         };
         this.multibandInputBus.connect(this.multibandNode);
         this.multibandNode.connect(this.multibandWet);
@@ -519,7 +538,15 @@ export class MasteringEngine {
     // EQ → tilt → bass-mono bus → midSide bus
     this.eqNodes[this.eqNodes.length - 1].connect(this.tiltLowNode);
     this.tiltLowNode.connect(this.tiltHighNode);
-    this.tiltHighNode.connect(this.bassMonoInputBus);
+    this.tiltHighNode.connect(this.matchInputBus);
+    this.matchInputBus.connect(this.matchDry);
+    this.matchDry.connect(this.matchOutputBus);
+    for (let i = 0; i < 2; i++) {
+      this.matchInputBus.connect(this.matchConv[i]);
+      this.matchConv[i].connect(this.matchGain[i]);
+      this.matchGain[i].connect(this.matchOutputBus);
+    }
+    this.matchOutputBus.connect(this.bassMonoInputBus);
     this.bassMonoInputBus.connect(this.bassMonoDry);
     this.bassMonoDry.connect(this.bassMonoOutputBus);
 
@@ -799,14 +826,46 @@ export class MasteringEngine {
     this.midSideDry.gain.setTargetAtTime(bypass || !hasNode ? 1 : 0, t, 0.005);
   }
 
+  // --- Match EQ (minimum-phase FIR) ---
+
+  /**
+   * Apply (or remove, with `curve = null`) the matched EQ curve. The FIR is designed for the context sample rate and swapped
+   * in through a short cross-fade between the two convolvers.
+   */
+  setMatchEq(curve: MatchCurve | null, amount: number) {
+    const t = this.ctx.currentTime;
+    const active = this._matchActive;
+    if (!curve || amount <= 0) {
+      this.matchDry.gain.setTargetAtTime(1, t, 0.01);
+      this.matchGain[0].gain.setTargetAtTime(0, t, 0.01);
+      this.matchGain[1].gain.setTargetAtTime(0, t, 0.01);
+      this._matchKey = '';
+      return;
+    }
+    const key = `${amount.toFixed(3)}|${curve.g.join(',')}|${this.ctx.sampleRate}`;
+    if (key === this._matchKey) return;
+    this._matchKey = key;
+    const ir = designMinPhaseFir(curve, amount, this.ctx.sampleRate);
+    const buf = this.ctx.createBuffer(1, ir.length, this.ctx.sampleRate);
+    buf.copyToChannel(ir as Float32Array<ArrayBuffer>, 0);
+    const next = 1 - active;
+    this.matchConv[next].buffer = buf;
+    this.matchGain[next].gain.setTargetAtTime(1, t, 0.012);
+    this.matchGain[active].gain.setTargetAtTime(0, t, 0.012);
+    this.matchDry.gain.setTargetAtTime(0, t, 0.012);
+    this._matchActive = next;
+  }
+
   // --- Multiband compressor (AudioWorklet) ---
 
   setMultiband(params: MultibandParams) {
     this._mbParams = params;
     this.multibandNode?.port.postMessage({
-      xover1: params.xover1,
-      xover2: params.xover2,
+      xovers: params.xovers,
       bands: params.bands,
+      mix: params.mix,
+      lookahead: params.lookahead,
+      monitor: this._mbMonitor,
     });
   }
 
@@ -817,8 +876,15 @@ export class MasteringEngine {
     this.multibandDry.gain.setTargetAtTime(bypass || !hasNode ? 1 : 0, t, 0.005);
   }
 
-  /** Per-band gain reduction [low, mid, high] in dB. */
+  /** Per-band gain reduction in dB (one entry per band). */
   getMultibandGR(): number[] { return this._mbGR; }
+  /** Per-band detector level in dB. */
+  getMultibandLevels(): number[] { return this._mbLvl; }
+  /** Listen to one band (index >= 0), to what the compressor removes (-2, "delta") or to the normal output (-1). Never exported. */
+  setMultibandMonitor(mode: number) {
+    this._mbMonitor = mode;
+    this.multibandNode?.port.postMessage({ monitor: mode });
+  }
 
   // --- De-esser / Dynamic EQ (AudioWorklet) ---
 
