@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAudio } from '@/contexts/AudioContext';
 import { accountApi, billingApi, type Project, type CreditPack, ApiError } from '@/lib/accountApi';
 import { toast } from 'sonner';
+import { OPEN_PACKS_EVENT, EXPORT_WINDOW_DAYS } from '@/lib/exportGate';
 
 const AccountPanel = () => {
   const { user, enabled, loading, login, register, logout, refreshUser } = useAuth();
@@ -60,6 +61,16 @@ const AccountPanel = () => {
     setShowPacks((v) => !v);
     if (!packs.length) billingApi.listPacks().then((r) => setPacks(r.packs)).catch(() => {});
   };
+
+  // an export that ran out of credits (or needs an account) asks for the pack list
+  useEffect(() => {
+    const open = () => {
+      setShowPacks(true);
+      if (!packs.length) billingApi.listPacks().then((r) => setPacks(r.packs)).catch(() => {});
+    };
+    window.addEventListener(OPEN_PACKS_EVENT, open);
+    return () => window.removeEventListener(OPEN_PACKS_EVENT, open);
+  }, [packs.length]);
 
   if (loading) {
     return (
@@ -187,7 +198,7 @@ const AccountPanel = () => {
 
           <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-primary/10">
             <span className="flex items-center gap-1 text-xs font-medium text-primary">
-              <Zap className="w-3 h-3" /> {user.credits} {user.credits === 1 ? 'kredyt' : 'kredytów'} AI
+              <Zap className="w-3 h-3" /> {user.credits} {user.credits === 1 ? 'utwór' : user.credits >= 2 && user.credits <= 4 ? 'utwory' : 'utworów'} do wyeksportowania
             </span>
             <button onClick={openPacks} className="text-[10px] underline text-primary hover:text-primary/80">
               {showPacks ? 'Ukryj' : 'Dokup'}
@@ -199,7 +210,7 @@ const AccountPanel = () => {
               <label className="flex items-start gap-1.5 text-[10px] text-muted-foreground leading-snug cursor-pointer">
                 <input type="checkbox" checked={waiverAccepted} onChange={(e) => setWaiverAccepted(e.target.checked)} className="mt-0.5 shrink-0" />
                 <span>
-                  Żądam dostarczenia kredytów od razu po zapłacie i przyjmuję do wiadomości, że tracę wtedy prawo odstąpienia.
+                  Żądam dostarczenia kredytów (1 kredyt = 1 utwór) od razu po zapłacie i przyjmuję do wiadomości, że tracę wtedy prawo odstąpienia.
                   Akceptuję{' '}
                   <a href="https://hardbanrecordslab.online/terms/" target="_blank" rel="noopener noreferrer" className="underline">Regulamin</a>.
                 </span>
@@ -209,6 +220,9 @@ const AccountPanel = () => {
                   <Loader2 className="w-3 h-3 animate-spin" /> Ładowanie pakietów…
                 </div>
               )}
+              <p className="text-[9px] text-muted-foreground leading-snug">
+                1 kredyt = 1 utwór wyeksportowany jako master. Poprawki i inne formaty tego samego utworu przez {EXPORT_WINDOW_DAYS} dni — bez opłaty. Bez abonamentu, kredyty nie wygasają.
+              </p>
               {packs.map((p) => (
                 <button
                   key={p.id}
@@ -221,7 +235,7 @@ const AccountPanel = () => {
                 >
                   <span className="flex items-center gap-1">
                     {checkingOut === p.id && <Loader2 className="w-3 h-3 animate-spin" />}
-                    {p.name} · {p.credits} kr.
+                    {p.name}
                   </span>
                   <span className="font-mono font-semibold">{p.price_pln != null ? `${p.price_pln} zł` : '—'}</span>
                 </button>

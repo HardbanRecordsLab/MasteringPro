@@ -1,20 +1,36 @@
-// Stripe billing — ONE paid level for everyone: a single one-time pack of tracks. No subscription, no auto-renewal,
+// Stripe billing — one service level for everyone, sold as one-time packs of tracks. No subscription, no auto-renewal,
 // no card-on-file trial; credits never expire. The price lives in Stripe (the Price object is the single source of truth,
-// so changing the price never needs a deploy); only the number of tracks per pack is configured here (PACK_CREDITS).
+// so changing a price never needs a deploy); the number of tracks per pack is defined here.
 // Same Stripe account/keys as Metadata Engine, so payments and payouts land in one place.
 import Stripe from 'stripe';
 import { config } from '../config.js';
 
-export const PACK_CREDITS = Math.max(1, parseInt(process.env.PACK_CREDITS || '', 10) || 20);
-
+// 1 credit = 1 track exported as a master (3-day free re-export of the same track, see services/exportCredits.js).
+// Three sizes of the SAME service — no feature tiers. The amount of each pack is the Price object in Stripe.
 export const CREDIT_PACKS = {
-  mastering: {
-    id: 'mastering',
-    name: 'Pakiet MasteringPro',
-    credits: PACK_CREDITS,
-    description: `${PACK_CREDITS} utworów do masteringu. Bez abonamentu, bez odnawiania, kredyty nie wygasają.`,
+  single: {
+    id: 'single',
+    name: '1 utwór',
+    credits: 1,
+    description: 'Jeden utwór zmasterowany i wyeksportowany. Bez abonamentu.',
     popular: false,
-    envPriceKey: 'STRIPE_PRICE_PACK',
+    envPriceKey: 'STRIPE_PRICE_PACK_SINGLE',
+  },
+  ten: {
+    id: 'ten',
+    name: '10 utworów',
+    credits: 10,
+    description: 'Dziesięć utworów — EP albo kilka singli. Kredyty nie wygasają.',
+    popular: true,
+    envPriceKey: 'STRIPE_PRICE_PACK_TEN',
+  },
+  album: {
+    id: 'album',
+    name: 'Cały album (do 16 utworów)',
+    credits: 16,
+    description: 'Cały album do 16 utworów, z trybem albumu. Kredyty nie wygasają.',
+    popular: false,
+    envPriceKey: 'STRIPE_PRICE_PACK_ALBUM',
   },
 };
 

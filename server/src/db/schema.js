@@ -15,6 +15,7 @@ import {
   jsonb,
   timestamp,
   index,
+  uniqueIndex,
   primaryKey,
 } from 'drizzle-orm/pg-core';
 
@@ -46,6 +47,21 @@ export const creditPurchases = pgTable('credit_purchases', {
   refundedAt: timestamp('refunded_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One row per (account, track) that has been paid for. Re-exporting the same track (other formats, fixes) inside the
+// window costs nothing; after it expires the next export of that track is charged again.
+export const exportCharges = pgTable(
+  'export_charges',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    trackKey: text('track_key').notNull(), // sha-256 of "name|size|lastModified" of the SOURCE file — the audio never leaves the browser
+    label: text('label'),
+    chargedAt: timestamp('charged_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [uniqueIndex('export_charges_user_track_uq').on(t.userId, t.trackKey)],
+);
 
 export const sessions = pgTable(
   'sessions',

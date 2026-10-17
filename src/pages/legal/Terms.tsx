@@ -1,16 +1,19 @@
 import LegalLayout from '@/components/site/LegalLayout';
 
 const Terms = () => (
-  <LegalLayout title="Regulamin" updated="11.10.2026" intro="Najważniejsze zasady korzystania z MasteringPro.">
+  <LegalLayout title="Regulamin" updated="17.10.2026" intro="Najważniejsze zasady korzystania z MasteringPro.">
     <section>
       <h2>Usługa</h2>
-      <p>Ręczna konsola masteringu jest bezpłatna i działa bez konta. Funkcje AI wymagają konta i kredytów.</p>
+      <p>Konsola masteringu działa w przeglądarce, a Twoje nagrania nie trafiają na nasz serwer. Do wyeksportowania mastera potrzebne jest konto i kredyty; nowe konto dostaje kilka kredytów na start. Asystent AI jest wliczony w cenę utworu.</p>
     </section>
     <section>
-      <h2>Kredyty AI</h2>
+      <h2>Kredyty</h2>
       <ul>
-        <li>Cenę i liczbę kredytów widzisz przed zakupem. Płacisz przez Stripe.</li>
+        <li>1 kredyt = 1 utwór wyeksportowany jako master. Cały album do 16 utworów to 16 kredytów.</li>
+        <li>Ten sam utwór możesz wyeksportować ponownie (poprawki, inne formaty) bez opłaty przez 3 dni od opłacenia. Utwór rozpoznajemy po nazwie, rozmiarze i dacie pliku źródłowego — nie po nagraniu.</li>
+        <li>Kupujesz jednorazowy pakiet (1 utwór, 10 utworów albo album). Bez abonamentu, bez automatycznego odnawiania, kredyty nie wygasają. Cenę i liczbę kredytów widzisz przed zakupem. Płacisz przez Stripe.</li>
         <li>Przez 14 dni możesz odstąpić od zakupu, chyba że na Twoją prośbę kredyty zaczęły być wykorzystywane wcześniej, a utrata tego prawa została przez Ciebie potwierdzona.</li>
+        <li>Zasady eksportu na kredyty obowiązują od dnia uruchomienia płatności; posiadaczy kont poinformujemy o nim e-mailem z 14-dniowym wyprzedzeniem.</li>
       </ul>
     </section>
     <section>

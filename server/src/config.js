@@ -85,6 +85,10 @@ export const config = {
 
   maxBodyBytes: num(process.env.MAX_BODY_BYTES, 256 * 1024),
 
+  // Export metering: 1 credit = 1 exported track. OFF until Stripe is connected and the packs can actually be bought —
+  // switch on with EXPORT_METERING=true (see HRL Handbook ch. 12). While off, exports are not charged.
+  exportMetering: bool(process.env.EXPORT_METERING, false),
+
   // Stripe — same account/keys as Metadata Engine (shared, per 2026-09-23
   // decision), credit packs defined in services/stripeBilling.js.
   stripe: {

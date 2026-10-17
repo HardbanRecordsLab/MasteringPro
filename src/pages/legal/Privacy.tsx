@@ -21,7 +21,7 @@ const Privacy = () => (
     <section>
       <h2>Konto i płatności</h2>
       <ul>
-        <li>Konto (e-mail, hasło w postaci skrótu, saldo kredytów) jest potrzebne tylko do płatnych funkcji AI. Płatności obsługuje Stripe — danych karty nie otrzymujemy.</li>
+        <li>Konto (e-mail, hasło w postaci skrótu, saldo kredytów, skróty identyfikujące opłacone utwory — liczone z nazwy, rozmiaru i daty pliku, nie z nagrania) jest potrzebne tylko do eksportu mastera i funkcji AI. Płatności obsługuje Stripe — danych karty nie otrzymujemy.</li>
         <li>Dane konta trzymamy do jego usunięcia, dane rozliczeniowe 5 lat od końca roku podatkowego.</li>
       </ul>
     </section>

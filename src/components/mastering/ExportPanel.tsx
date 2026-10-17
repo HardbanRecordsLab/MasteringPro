@@ -5,6 +5,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { useAudio } from '@/contexts/AudioContext';
 import { exportAudio, exportAllTargets, downloadBlob, type MasterReport } from '@/lib/audioExport';
 import { toast } from 'sonner';
+import { trackKeyOf, useExportGate } from '@/lib/exportGate';
 
 const FORMATS = [
   { id: 'wav24', label: 'WAV 24-bit', desc: 'Lossless master / distribution' },
@@ -37,6 +38,10 @@ const PLATFORMS = [
 
 const ExportPanel = () => {
   const { state, processing } = useAudio();
+  const settleExport = useExportGate();
+  const exportTrack = () => state.file
+    ? [{ key: trackKeyOf(state.file), label: state.fileInfo?.name }]
+    : [{ key: `${state.fileInfo?.name}|${state.fileInfo?.duration}`, label: state.fileInfo?.name }];
   const [selectedFormats, setSelectedFormats] = useState<string[]>(['wav24']);
   const [selectedPlatform, setSelectedPlatform] = useState('Spotify');
   const [sampleRate, setSampleRate] = useState(0);
@@ -54,6 +59,7 @@ const ExportPanel = () => {
 
   const handleExportAllTargets = async () => {
     if (!state.audioBuffer || !state.fileInfo) return;
+    if (!(await settleExport(exportTrack()))) return;
     setIsExporting(true);
     try {
       const result = await exportAllTargets(state.audioBuffer, {
@@ -83,6 +89,7 @@ const ExportPanel = () => {
 
   const handleExport = async (asZip: boolean) => {
     if (!state.audioBuffer || !state.fileInfo) return;
+    if (!(await settleExport(exportTrack()))) return;
 
     setIsExporting(true);
     try {

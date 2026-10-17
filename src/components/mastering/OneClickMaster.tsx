@@ -9,6 +9,7 @@ import { invokeAI } from '@/lib/aiApi';
 import { encodeWav, downloadBlob, renderMaster } from '@/lib/audioExport';
 import { saveLastAISettings } from '@/lib/aiMasteringPresets';
 import { toast } from 'sonner';
+import { trackKeyOf, useExportGate } from '@/lib/exportGate';
 
 const PLATFORMS = [
   { id: 'spotify', label: 'Spotify', lufs: -14, peak: -1.0 },
@@ -35,6 +36,7 @@ const STAGES: Stage[] = [
 
 const OneClickMaster = () => {
   const { state, processing, setProcessing } = useAudio();
+  const settleExport = useExportGate();
   const [platform, setPlatform] = useState('spotify');
   const [busy, setBusy] = useState(false);
   const [stageId, setStageId] = useState<string | null>(null);
@@ -67,6 +69,8 @@ const OneClickMaster = () => {
 
   const handleOneClick = async () => {
     if (!state.audioBuffer || !state.fileInfo) return;
+    const key = state.file ? trackKeyOf(state.file) : `${state.fileInfo.name}|${state.fileInfo.duration}`;
+    if (!(await settleExport([{ key, label: state.fileInfo.name }]))) return;
     setBusy(true);
     setDone(false);
     setCompletedFile(null);

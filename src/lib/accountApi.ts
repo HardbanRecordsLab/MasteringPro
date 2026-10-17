@@ -51,9 +51,12 @@ export interface ProjectVersion {
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** machine-readable error from the server, e.g. 'CREDITS_EXHAUSTED' */
+  code?: string;
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -66,7 +69,7 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const text = await res.text();
   const body = text ? JSON.parse(text) : null;
-  if (!res.ok) throw new ApiError(body?.error || res.statusText, res.status);
+  if (!res.ok) throw new ApiError(body?.message || body?.error || res.statusText, res.status, body?.error);
   return body as T;
 }
 
@@ -123,4 +126,23 @@ export const billingApi = {
       method: 'POST',
       body: JSON.stringify({ pack_id: packId }),
     }),
+};
+
+export interface ExportCharge {
+  /** credits spent by this call (0 = every track was already paid for) */
+  charged: number;
+  covered: number;
+  credits: number;
+  covered_until: string | null;
+  window_days: number;
+  /** false while the server has export metering switched off */
+  metering?: boolean;
+}
+
+export const creditsApi = {
+  /** Public: is exporting charged yet? */
+  status: () => req<{ export_metering: boolean; window_days: number; max_tracks: number }>('/api/credits/status'),
+  /** Pays for exporting these tracks as masters (1 credit each; the same track is free again for 3 days). */
+  chargeExport: (tracks: Array<{ key: string; label?: string }>) =>
+    req<ExportCharge>('/api/credits/export', { method: 'POST', body: JSON.stringify({ tracks }) }),
 };

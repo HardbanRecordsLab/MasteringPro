@@ -17,6 +17,8 @@ import {
   type AlbumSettings, type AlbumTrack, type OrderMode,
 } from '@/lib/album/plan';
 import { masterAlbum, type AlbumReport } from '@/lib/album/master';
+import { MAX_ALBUM_TRACKS, trackKeyOf, useExportGate } from '@/lib/exportGate';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Item {
   id: string;
@@ -58,6 +60,8 @@ const Album = () => {
   const [progress, setProgress] = useState<{ i: number; label: string; pct: number } | null>(null);
   const [result, setResult] = useState<{ blob: Blob; report: AlbumReport } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const settleExport = useExportGate();
+  const { user, enabled: accountsOn } = useAuth();
   const abortRef = useRef<AbortController | null>(null);
 
   // ── analysis queue: one track at a time (decode → profile → key / tempo), then the buffer is released ──
@@ -94,12 +98,16 @@ const Album = () => {
     const list = Array.from(files).filter((f) => f.type.startsWith('audio/') || /\.(wav|aiff?|flac|mp3|m4a|ogg)$/i.test(f.name));
     if (!list.length) { toast.error('No audio files found'); return; }
     setResult(null);
-    setItems((cur) => [
+    setItems((cur) => {
+      const room = Math.max(0, MAX_ALBUM_TRACKS - cur.length);
+      if (list.length > room) toast.error(`An album holds up to ${MAX_ALBUM_TRACKS} tracks — ${list.length - room} file(s) were left out.`);
+      return [
       ...cur,
-      ...list.map((file) => ({
+      ...list.slice(0, room).map((file) => ({
         id: crypto.randomUUID(), file, name: file.name.replace(/\.[^.]+$/, ''), status: 'queued' as const, gapBeforeSec: gapSec,
       })),
-    ]);
+      ];
+    });
   }, [gapSec]);
 
   const ready = items.filter((i) => i.status === 'ready' && i.info);
@@ -139,6 +147,10 @@ const Album = () => {
 
   const run = async () => {
     if (!ready.length || busy) return;
+    if (accountsOn && user && !window.confirm(
+      `Wyeksportować ${ready.length} utworów? Pobierze do ${ready.length} kredytów (masz ${user.credits}). Utwory opłacone w ciągu ostatnich 3 dni są bezpłatne.`,
+    )) return;
+    if (!(await settleExport(ready.map((it) => ({ key: trackKeyOf(it.file), label: it.name }))))) return;
     const preset = FACTORY_PRESETS.find((p) => p.id === presetId);
     const baseChain = { ...DEFAULT_PROCESSING, ...(preset?.chain ?? {}) };
     abortRef.current = new AbortController();
@@ -368,6 +380,13 @@ const Album = () => {
               <Button className="w-full gap-2" disabled={busy || ready.length === 0 || analysing} onClick={run}>
                 {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Mastering…</> : <><Wand2 className="w-4 h-4" /> Master the album</>}
               </Button>
+              {accountsOn && (
+                <p className="text-[10px] text-muted-foreground leading-snug">
+                  {user
+                    ? `1 kredyt = 1 utwór. Masz ${user.credits}. Utwory opłacone w ciągu ostatnich 3 dni są bezpłatne.`
+                    : <>Aby wyeksportować album, <Link to="/app" className="underline">zaloguj się w aplikacji</Link> — pierwsze utwory są gratis.</>}
+                </p>
+              )}
               {busy && progress && (
                 <div className="space-y-1">
                   <div className="text-[10px] font-mono text-muted-foreground">Track {progress.i + 1} / {ready.length} · {progress.label}</div>

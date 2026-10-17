@@ -7,7 +7,8 @@ import { aiCopilotHandler } from "./routes/aiCopilot.js";
 import { dbEnabled } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { loadUser, requireUser, sweepSessions } from "./auth.js";
-import { requireCredits } from "./creditGate.js";
+import { requireAiQuota } from "./creditGate.js";
+import { creditsRoutes } from "./routes/credits.js";
 import { authRoutes } from "./routes/auth.js";
 import { projectRoutes } from "./routes/projects.js";
 import { presetRoutes } from "./routes/presets.js";
@@ -73,13 +74,14 @@ if (dbEnabled()) {
   app.route("/api/references", referenceRoutes);
   app.route("/api/albums", albumRoutes);
   app.route("/api/billing", billingRoutes);
+  app.route("/api/credits", creditsRoutes);
 
   // AI Mastering / Copilot hit real backend compute and cost real money to
-  // run — gated behind a signed-in user with credits once accounts exist.
+  // run — included in the price of a track: signed-in account + daily cap, no credits spent.
   // The DSP console itself (EQ, compression, limiter, render, ...) is pure
   // client-side Web Audio and is never gated, in any deployment.
-  app.post("/api/ai-mastering", requireUser, requireCredits, aiMasteringHandler);
-  app.post("/api/ai-copilot", requireUser, requireCredits, aiCopilotHandler);
+  app.post("/api/ai-mastering", requireUser, requireAiQuota, aiMasteringHandler);
+  app.post("/api/ai-copilot", requireUser, requireAiQuota, aiCopilotHandler);
 } else {
   // No DATABASE_URL: a self-hosted / personal deployment with no accounts at
   // all (operator's own OpenRouter key, no billing infra to speak of) — AI
@@ -87,7 +89,7 @@ if (dbEnabled()) {
   app.post("/api/ai-mastering", aiMasteringHandler);
   app.post("/api/ai-copilot", aiCopilotHandler);
   const disabled = (c) => c.json({ error: "Accounts are not enabled on this server" }, 501);
-  for (const p of ["/api/auth/*", "/api/projects/*", "/api/presets/*", "/api/renders/*", "/api/references/*", "/api/albums/*", "/api/billing/*"]) {
+  for (const p of ["/api/auth/*", "/api/projects/*", "/api/presets/*", "/api/renders/*", "/api/references/*", "/api/albums/*", "/api/billing/*", "/api/credits/*"]) {
     app.all(p, disabled);
   }
 }

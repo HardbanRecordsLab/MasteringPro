@@ -15,7 +15,7 @@ export async function processStripeEvent(db, event) {
 
       const metadata = session.metadata || {};
       const userId = metadata.user_id || session.client_reference_id;
-      const packId = metadata.pack_id || 'mastering';
+      const packId = metadata.pack_id || 'ten';
       let creditsToAdd = parseInt(metadata.credits, 10) || 0;
       if (creditsToAdd <= 0) creditsToAdd = CREDIT_PACKS[packId]?.credits || 0;
       if (!userId || creditsToAdd <= 0) {
