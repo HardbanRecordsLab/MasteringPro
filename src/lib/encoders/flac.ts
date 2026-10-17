@@ -3,6 +3,8 @@
  * asset, bundles cleanly). Lazy-loaded on first use.
  */
 
+import { quantizeChannels, type DitherMode } from '@/lib/quantize';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let flacModPromise: Promise<any> | null = null;
 
@@ -21,11 +23,10 @@ async function getFlac(): Promise<any> {
   return flacModPromise;
 }
 
-export async function encodeFlac(buffer: AudioBuffer, bps: 16 | 24 = 24): Promise<Uint8Array> {
+export async function encodeFlac(buffer: AudioBuffer, bps: 16 | 24 = 24, dither: DitherMode = 'tpdf'): Promise<Uint8Array> {
   const Flac = await getFlac();
   const channels = Math.min(2, buffer.numberOfChannels);
   const samples = buffer.length;
-  const full = 2 ** (bps - 1) - 1;
 
   const enc = Flac.create_libflac_encoder(buffer.sampleRate, channels, bps, 5, samples, false, 0);
   if (!enc) throw new Error('FLAC encoder init failed');
@@ -43,17 +44,8 @@ export async function encodeFlac(buffer: AudioBuffer, bps: 16 | 24 = 24): Promis
     throw new Error(`FLAC init_encoder_stream status ${status}`);
   }
 
-  // per-channel Int32 buffers
-  const chBufs: Int32Array[] = [];
-  for (let c = 0; c < channels; c++) {
-    const src = buffer.getChannelData(c);
-    const dst = new Int32Array(samples);
-    for (let i = 0; i < samples; i++) {
-      const s = Math.max(-1, Math.min(1, src[i]));
-      dst[i] = Math.round(s * full);
-    }
-    chBufs.push(dst);
-  }
+  // per-channel Int32 buffers: rounded, dithered (16-bit) and clamped — see quantize.ts
+  const chBufs = quantizeChannels(Array.from({ length: channels }, (_, c) => buffer.getChannelData(c)), bps, dither);
 
   const CHUNK = 1 << 16;
   for (let off = 0; off < samples; off += CHUNK) {

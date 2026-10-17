@@ -2,8 +2,10 @@
  * Bass Mono-Maker — AudioWorklet Processor
  *
  * Everything below `freq` is summed to mono (both channels get (L+R)/2);
- * everything above stays stereo. Linkwitz-Riley 2nd-order crossover so the
- * split sums flat. Essential for vinyl and club systems.
+ * everything above stays stereo. Linkwitz-Riley 4th-order crossover (two cascaded
+ * Butterworth biquads per side): LP + HP sums to a flat-magnitude all-pass, so
+ * centred material passes without a notch at the crossover (a single 2nd-order
+ * Butterworth pair would cancel completely at `freq`). Essential for vinyl and club systems.
  *
  * Config: processorOptions / port message { freq }  (default 120 Hz)
  */
@@ -42,12 +44,20 @@ class LR2 {
   }
 }
 
+/** 4th-order Linkwitz-Riley = two identical Butterworth biquads in series */
+class LR4 {
+  constructor(type) { this.a = new LR2(type); this.b = new LR2(type); }
+  set(sr, f) { this.a.set(sr, f); this.b.set(sr, f); }
+  reset() { this.a.reset(); this.b.reset(); }
+  process(x) { return this.b.process(this.a.process(x)); }
+}
+
 class BassMonoProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.freq = ((options && options.processorOptions) || {}).freq || 120;
-    this.lpL = new LR2('lp'); this.lpR = new LR2('lp');
-    this.hpL = new LR2('hp'); this.hpR = new LR2('hp');
+    this.lpL = new LR4('lp'); this.lpR = new LR4('lp');
+    this.hpL = new LR4('hp'); this.hpR = new LR4('hp');
     this._update();
     this.port.onmessage = (e) => { if (e.data && typeof e.data.freq === 'number') { this.freq = e.data.freq; this._update(); } };
   }

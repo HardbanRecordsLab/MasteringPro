@@ -1,3 +1,4 @@
+import { quantizeChannels, type DitherMode } from '@/lib/quantize';
 import JSZip from 'jszip';
 import type { ProcessingParams } from '@/contexts/AudioContext';
 import { renderProcessed } from '@/lib/offlineRender';
@@ -21,36 +22,7 @@ export interface MasterReport {
 /**
  * Encode AudioBuffer to WAV ArrayBuffer
  */
-export type DitherMode = 'none' | 'tpdf' | 'shaped';
-
-/**
- * TPDF dither + optional 2nd-order noise shaping, applied per channel.
- * Only meaningful for fixed-point targets (16/24-bit).
- */
-function makeDitherer(bitDepth: 16 | 24 | 32, mode: DitherMode, numChannels: number) {
-  if (bitDepth === 32 || mode === 'none') {
-    return (sample: number) => sample;
-  }
-  const lsb = 1 / Math.pow(2, bitDepth - 1);
-  const e1 = new Float32Array(numChannels);
-  const e2 = new Float32Array(numChannels);
-  return (sample: number, ch: number) => {
-    let x = sample;
-    if (mode === 'shaped') {
-      // simple 2nd-order highpass error feedback
-      x += 1.8 * e1[ch] - 0.9 * e2[ch];
-    }
-    // TPDF noise, 1 LSB peak-to-peak
-    const noise = (Math.random() - Math.random()) * lsb;
-    const dithered = x + noise;
-    if (mode === 'shaped') {
-      const quantized = Math.round(dithered / lsb) * lsb;
-      e2[ch] = e1[ch];
-      e1[ch] = quantized - x;
-    }
-    return dithered;
-  };
-}
+export type { DitherMode };
 
 export function encodeWav(
   buffer: AudioBuffer,
@@ -88,21 +60,28 @@ export function encodeWav(
     channels.push(buffer.getChannelData(c));
   }
 
-  const applyDither = makeDitherer(bitDepth, dither, numChannels);
-
   let offset = headerSize;
+  if (bitDepth === 32) {
+    for (let i = 0; i < length; i++) {
+      for (let c = 0; c < numChannels; c++) {
+        let v = channels[c][i];
+        if (!(v - v === 0)) v = 0;
+        view.setFloat32(offset, Math.max(-1, Math.min(1, v)), true);
+        offset += 4;
+      }
+    }
+    return arrayBuffer;
+  }
+  const q = quantizeChannels(channels, bitDepth, dither);
   for (let i = 0; i < length; i++) {
     for (let c = 0; c < numChannels; c++) {
-      const sample = Math.max(-1, Math.min(1, applyDither(channels[c][i], c)));
+      const val = q[c][i];
       if (bitDepth === 16) {
-        view.setInt16(offset, sample * 0x7FFF, true);
-      } else if (bitDepth === 24) {
-        const val = Math.round(sample * 0x7FFFFF);
+        view.setInt16(offset, val, true);
+      } else {
         view.setUint8(offset, val & 0xFF);
         view.setUint8(offset + 1, (val >> 8) & 0xFF);
         view.setUint8(offset + 2, (val >> 16) & 0xFF);
-      } else {
-        view.setFloat32(offset, sample, true);
       }
       offset += bytesPerSample;
     }
@@ -166,16 +145,15 @@ export function encodeAiff(
 
   const channels: Float32Array[] = [];
   for (let c = 0; c < numChannels; c++) channels.push(buffer.getChannelData(c));
-  const applyDither = makeDitherer(bitDepth, dither, numChannels);
+  const q = quantizeChannels(channels, bitDepth, dither);
 
   let o = 54;
   for (let i = 0; i < length; i++) {
     for (let c = 0; c < numChannels; c++) {
-      const s = Math.max(-1, Math.min(1, applyDither(channels[c][i], c)));
+      const v = q[c][i];
       if (bitDepth === 16) {
-        view.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, false);
+        view.setInt16(o, v, false);
       } else {
-        const v = Math.round(s * 0x7fffff);
         view.setUint8(o, (v >> 16) & 0xff);
         view.setUint8(o + 1, (v >> 8) & 0xff);
         view.setUint8(o + 2, v & 0xff);
@@ -245,7 +223,7 @@ export async function encodeFormat(
   }
   if (fmt.kind === 'flac') {
     const { encodeFlac } = await import('@/lib/encoders/flac');
-    return { data: await encodeFlac(buffer, fmt.bitDepth === 16 ? 16 : 24), mime: 'audio/flac' };
+    return { data: await encodeFlac(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), mime: 'audio/flac' };
   }
   if (fmt.kind === 'aiff') {
     return { data: encodeAiff(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), mime: 'audio/aiff' };
