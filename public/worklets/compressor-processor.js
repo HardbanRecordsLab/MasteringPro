@@ -1,54 +1,62 @@
 /**
  * Mastering Compressor — AudioWorklet Processor
  *
- * Deterministic feed-forward compressor — identical result in every browser and
- * in the offline render (unlike the native DynamicsCompressor).
+ * Deterministic feed-forward compressor — identical result in every browser and in the offline render (unlike the native
+ * DynamicsCompressor).
  *
- * - Peak or RMS detection (5 ms window), log-domain gain computer, soft knee
- * - Attack / release ballistics; optional program-dependent (auto) release
- * - Stereo modes: linked · mid/side · dual-mono (L/R independent)
- * - Parallel mix (0–100 %), manual or auto makeup
- * - Posts { gr } (dB, max reduction in the block) ~30 Hz
+ * - Detector: peak (instant attack, short fall-back) or RMS (5 ms mean-square window). It carries NO attack/release of its own.
+ * - Gain computer: soft-knee static curve, in dB.
+ * - Ballistics: the gain reduction is smoothed ONCE, in the dB domain, with one-pole attack / release. So the attack knob
+ *   is the real time (to 63 %) the gain takes to follow, and the release knob the real recovery time. (An earlier version
+ *   smoothed the detector AND the gain, which made the effective attack ≈ 3× the setting.)
+ * - Auto release: the release lengthens when the compressor has been working hard for a while and shortens for brief peaks
+ *   (driven by the long-term average of what the curve demands, not by the already-smoothed gain).
+ * - Stereo modes: linked · mid/side · dual-mono (L/R independent). Parallel mix (0–100 %), manual or auto makeup.
+ * - Posts { gr } (dB, max reduction in the block) ~30 Hz.
  *
  * Config via processorOptions + port messages:
  *   { threshold, ratio, attack, release, knee, makeup, mix,
  *     detect:'peak'|'rms', mode:'stereo'|'ms'|'dual', autoRelease, autoMakeup }
  */
 
-class Channel {
-  constructor() { this.env = 0; this.sq = 0; this.g = 1; }
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
-  /** returns smoothed linear gain for one sample */
+class Channel {
+  constructor() { this.sq = 0; this.pk = 0; this.gr = 0; this.slow = 0; }
+
+  /** returns the linear gain (≤ 1) for one sample */
   run(x, cfg) {
     // ---- detector ----
     let level;
     if (cfg.rms) {
-      this.sq = cfg.rmsC * this.sq + (1 - cfg.rmsC) * x * x;
+      this.sq += (x * x - this.sq) * cfg.rmsK;
       level = Math.sqrt(this.sq);
     } else {
-      level = Math.abs(x);
+      const a = x < 0 ? -x : x;
+      this.pk = a > this.pk ? a : this.pk * cfg.pkFall;
+      level = this.pk;
     }
-    const dC = level > this.env ? cfg.atkC : cfg.relC;
-    this.env = dC * (this.env - level) + level;
 
     // ---- gain computer (dB, soft knee) ----
-    const lvlDb = 20 * Math.log10(this.env + 1e-9);
+    const lvlDb = 20 * Math.log10(level + 1e-9);
     const over = lvlDb - cfg.threshold;
-    let grDb;
+    let target;
     if (cfg.knee > 0 && over > -cfg.knee / 2 && over < cfg.knee / 2) {
       const t = over + cfg.knee / 2;
-      grDb = -(1 - 1 / cfg.ratio) * (t * t) / (2 * cfg.knee);
+      target = -(1 - 1 / cfg.ratio) * (t * t) / (2 * cfg.knee);
     } else {
-      grDb = over > 0 ? -over * (1 - 1 / cfg.ratio) : 0;
+      target = over > 0 ? -over * (1 - 1 / cfg.ratio) : 0;
     }
-    const target = Math.pow(10, grDb / 20);
 
-    // ---- gain smoothing ----
-    // program-dependent release: recover faster after brief peaks
-    const rel = cfg.autoRelease && this.g < 0.85 ? cfg.relFastC : cfg.relC;
-    const sC = target < this.g ? cfg.atkC : rel;
-    this.g = sC * (this.g - target) + target;
-    return this.g;
+    // ---- ballistics in the dB domain ----
+    let relC = cfg.relC;
+    if (cfg.autoRelease) {
+      this.slow += (-target - this.slow) * cfg.slowK;               // long-term average of what the curve demands
+      const depth = clamp(this.slow / 8, 0, 1);
+      relC = Math.exp(-1 / (cfg.sr * Math.max(1, cfg.relMs * (0.35 + 0.65 * depth)) * 0.001));
+    }
+    this.gr = target < this.gr ? cfg.atkC * (this.gr - target) + target : relC * (this.gr - target) + target;
+    return Math.pow(10, this.gr / 20);
   }
 }
 
@@ -83,10 +91,14 @@ class CompressorProcessor extends AudioWorkletProcessor {
 
     const relMs = Math.max(1, p.release);
     const cfg = {
+      sr,
+      relMs,
       atkC: Math.exp(-1 / (sr * Math.max(0.05, p.attack) * 0.001)),
       relC: Math.exp(-1 / (sr * relMs * 0.001)),
-      relFastC: Math.exp(-1 / (sr * relMs * 0.35 * 0.001)),
-      rmsC: Math.exp(-1 / (sr * 0.005)),
+      rmsK: 1 - Math.exp(-1 / (sr * 0.005)),
+      // the peak detector may never fall slower than the release it feeds, nor faster than 30 ms (ripple on low tones)
+      pkFall: Math.exp(-1 / (sr * Math.min(0.030, relMs * 0.0005) * 1)),
+      slowK: 1 - Math.exp(-1 / (sr * 0.25)),
       rms: p.detect === 'rms',
       threshold: p.threshold,
       ratio: Math.max(1, p.ratio),
@@ -96,7 +108,7 @@ class CompressorProcessor extends AudioWorkletProcessor {
 
     const mixWet = Math.min(1, Math.max(0, p.mix / 100));
     const mixDry = 1 - mixWet;
-    // auto makeup ≈ half the static reduction at 0 dBFS input
+    // auto makeup ≈ 60 % of the static reduction at 0 dBFS input
     let autoMk = 1;
     if (p.autoMakeup) {
       const overAt0 = 0 - p.threshold;
@@ -139,8 +151,16 @@ class CompressorProcessor extends AudioWorkletProcessor {
         wr = r * gg;
       }
 
-      outL[i] = (wl * mixWet + l * mixDry) * g;
-      if (output[1]) outR[i] = (wr * mixWet + r * mixDry) * g;
+      let oL = (wl * mixWet + l * mixDry) * g;
+      let oR = (wr * mixWet + r * mixDry) * g;
+      if (oL !== oL || oR !== oR || oL === Infinity || oL === -Infinity || oR === Infinity || oR === -Infinity) {
+        // a NaN / Infinity in the input must not poison the state: pass the dry signal and start clean
+        oL = l; oR = r;
+        this.a = new Channel();
+        this.b = new Channel();
+      }
+      outL[i] = oL;
+      if (output[1]) outR[i] = oR;
     }
 
     this._gr = 20 * Math.log10(Math.max(minGain, 1e-6));

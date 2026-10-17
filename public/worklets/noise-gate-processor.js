@@ -67,8 +67,11 @@ class NoiseGateProcessor extends AudioWorkletProcessor {
     const N = inL.length;
 
     for (let i = 0; i < N; i++) {
-      const l = inL[i];
-      const r = inR[i];
+      let l = inL[i];
+      let r = inR[i];
+      // a NaN / Infinity sample must not poison the envelope (it would keep the gate shut for good)
+      if (!(l - l === 0)) l = 0;
+      if (!(r - r === 0)) r = 0;
       const key = Math.max(Math.abs(l), Math.abs(r));
 
       // Envelope follower (peak)

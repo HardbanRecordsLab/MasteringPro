@@ -17,6 +17,7 @@ class LR2 {
     this.first = true;
     this.k = 1 - Math.exp(-1 / (sampleRate * 0.005)); // ~5 ms slew
   }
+  reset() { this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
   set(sr, f) {
     const w0 = (2 * Math.PI * Math.min(f, sr * 0.45)) / sr;
     const c = Math.cos(w0);
@@ -62,7 +63,12 @@ class BassMonoProcessor extends AudioWorkletProcessor {
     const outL = output[0];
     const outR = output[1] || output[0];
     for (let i = 0; i < inL.length; i++) {
-      const l = inL[i], r = inR[i];
+      let l = inL[i], r = inR[i];
+      // NaN / Infinity would live on in the crossover state forever: treat it as silence and start clean
+      if (!(l - l === 0) || !(r - r === 0)) {
+        l = 0; r = 0;
+        this.lpL.reset(); this.lpR.reset(); this.hpL.reset(); this.hpR.reset();
+      }
       const lowMono = (this.lpL.process(l) + this.lpR.process(r)) * 0.5;
       outL[i] = lowMono + this.hpL.process(l);
       if (output[1]) outR[i] = lowMono + this.hpR.process(r);

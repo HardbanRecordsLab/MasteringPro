@@ -88,6 +88,13 @@ class DynamicsEqProcessor extends AudioWorkletProcessor {
     };
   }
 
+  _resetState() {
+    for (const b of [this.sibL, this.sibR, this.detL, this.detR]) { b.lp = 0; b.bp = 0; }
+    for (const p of [this.dynPeakL, this.dynPeakR]) { p.x1 = 0; p.x2 = 0; p.y1 = 0; p.y2 = 0; }
+    this.eDeL = 0; this.eDeR = 0; this.eDyL = 0; this.eDyR = 0;
+    this.deGain = 1; this.dynDb = 0;
+  }
+
   _updateFilters() {
     const sr = sampleRate;
     for (const b of [this.sibL, this.sibR]) b.set(sr, this.deEss.freq, 1.4);
@@ -118,6 +125,11 @@ class DynamicsEqProcessor extends AudioWorkletProcessor {
     for (let i = 0; i < N; i++) {
       let l = inL[i];
       let r = inR[i];
+      // NaN / Infinity would live on in the filter and envelope state forever: treat it as silence and start clean
+      if (!(l - l === 0) || !(r - r === 0)) {
+        l = 0; r = 0;
+        this._resetState();
+      }
 
       // ---- de-esser (split band) ----
       if (this.deEss.enabled) {
@@ -159,6 +171,12 @@ class DynamicsEqProcessor extends AudioWorkletProcessor {
         r = this.dynPeakR.process(r);
       }
 
+      if (!(l - l === 0) || !(r - r === 0)) {           // the processing itself blew up: pass dry and restart clean
+        l = inL[i]; r = inR[i];
+        if (!(l - l === 0)) l = 0;
+        if (!(r - r === 0)) r = 0;
+        this._resetState();
+      }
       outL[i] = l;
       if (output[1]) outR[i] = r;
     }

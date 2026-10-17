@@ -24,6 +24,7 @@ class Biquad {
     this.tb0 = 1; this.tb1 = 0; this.tb2 = 0; this.ta1 = 0; this.ta2 = 0;
     this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0;
   }
+  reset() { this.x1 = 0; this.x2 = 0; this.y1 = 0; this.y2 = 0; }
   setPeaking(sr, freq, q, dbGain) {
     const A = Math.pow(10, dbGain / 40);
     const w0 = (2 * Math.PI * freq) / sr;
@@ -100,12 +101,21 @@ class MidSideEQProcessor extends AudioWorkletProcessor {
     const N = inL.length;
 
     for (let i = 0; i < N; i++) {
-      const l = inL[i];
-      const r = inR[i];
+      let l = inL[i];
+      let r = inR[i];
+      // NaN / Infinity in the input would live on in the IIR state forever: treat it as silence and start clean
+      if (!(l - l === 0) || !(r - r === 0)) {
+        l = 0; r = 0;
+        for (const bq of all) bq.reset();
+      }
       let m = (l + r) * 0.5;
       let s = (l - r) * 0.5;
       m = this.midH.process(this.midM.process(this.midL.process(m)));
       s = this.sideH.process(this.sideM.process(this.sideL.process(s)));
+      if (!(m - m === 0) || !(s - s === 0)) {         // the filter itself blew up (e.g. a bad parameter): reset, pass dry
+        for (const bq of all) bq.reset();
+        m = (l + r) * 0.5; s = (l - r) * 0.5;
+      }
       outL[i] = m + s;
       outR[i] = m - s;
     }
