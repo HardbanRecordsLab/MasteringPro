@@ -237,7 +237,7 @@ const AccountPanel = () => {
                     {checkingOut === p.id && <Loader2 className="w-3 h-3 animate-spin" />}
                     {p.name}
                   </span>
-                  <span className="font-mono font-semibold">{p.price_pln != null ? `${p.price_pln} zł` : '—'}</span>
+                  <span className="font-mono font-semibold">{p.price_usd != null ? `$${p.price_usd}` : '—'}</span>
                 </button>
               ))}
             </div>

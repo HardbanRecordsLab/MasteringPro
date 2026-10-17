@@ -27,7 +27,7 @@ ok((await credits(u.id)) === 3, 'new account starts with the 3 free credits');
 
 const checkout = (type, id, over = {}) => ({
   type,
-  data: { object: { id, payment_status: 'paid', payment_intent: 'pi_' + id, amount_total: 7900, currency: 'pln',
+  data: { object: { id, payment_status: 'paid', payment_intent: 'pi_' + id, amount_total: 3900, currency: 'usd',
     client_reference_id: u.id, metadata: { user_id: u.id, pack_id: 'ten', credits: '10' }, ...over } },
 });
 
@@ -46,15 +46,15 @@ r = await processStripeEvent(db, checkout('checkout.session.async_payment_succee
 ok(r.body.status === 'success' && (await credits(u.id)) === 33, 'async_payment_succeeded → credits granted');
 
 const charge = (pi, amount, refunded) => ({ type: 'charge.refunded', data: { object: { payment_intent: pi, amount, amount_refunded: refunded } } });
-r = await processStripeEvent(db, charge('pi_cs_3', 7900, 3000));
+r = await processStripeEvent(db, charge('pi_cs_3', 3900, 1500));
 ok(r.body.status === 'ignored' && (await credits(u.id)) === 33, 'partial refund leaves credits (manual decision)');
-r = await processStripeEvent(db, charge('pi_cs_3', 7900, 7900));
+r = await processStripeEvent(db, charge('pi_cs_3', 3900, 3900));
 ok(r.body.status === 'refunded' && (await credits(u.id)) === 23, 'full refund takes the pack back');
-r = await processStripeEvent(db, charge('pi_cs_3', 7900, 7900));
+r = await processStripeEvent(db, charge('pi_cs_3', 3900, 3900));
 ok(r.body.status === 'ignored' && (await credits(u.id)) === 23, 'refund event repeated → nothing more is taken');
 
 await db.update(schema.users).set({ credits: 5 }).where(eq(schema.users.id, u.id));
-r = await processStripeEvent(db, charge('pi_cs_1', 7900, 7900));
+r = await processStripeEvent(db, charge('pi_cs_1', 3900, 3900));
 ok((await credits(u.id)) === 0, 'refund after the credits were spent never goes below zero');
 
 r = await processStripeEvent(db, checkout('checkout.session.completed', 'cs_4', { client_reference_id: '00000000-0000-0000-0000-000000000000', metadata: { user_id: '00000000-0000-0000-0000-000000000000', credits: '20' } }));

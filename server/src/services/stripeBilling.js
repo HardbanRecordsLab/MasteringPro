@@ -55,9 +55,11 @@ async function stripePrice(priceId) {
   const hit = priceCache.get(priceId);
   if (hit && Date.now() - hit.at < 10 * 60_000) return hit.price;
   const p = await getStripe().prices.retrieve(priceId);
-  const price = p && p.active && p.type === 'one_time' && p.unit_amount != null
+  // All prices are in USD. A Price in any other currency is treated as not configured (the pack stays unavailable).
+  const price = p && p.active && p.type === 'one_time' && p.unit_amount != null && p.currency === 'usd'
     ? { amount: p.unit_amount, currency: p.currency }
     : null;
+  if (p && p.currency !== 'usd') console.error('[billing] Price %s is in %s — prices must be USD', priceId, p.currency);
   priceCache.set(priceId, { at: Date.now(), price });
   return price;
 }
@@ -72,8 +74,8 @@ export async function packToPublicDict(pack) {
     id: pack.id,
     name: pack.name,
     credits: pack.credits,
-    price_pln: price && price.currency === 'pln' ? price.amount / 100 : null,
-    currency: price ? price.currency : 'pln',
+    price_usd: price ? price.amount / 100 : null,
+    currency: 'usd',
     description: pack.description,
     popular: pack.popular,
     available: Boolean(price),

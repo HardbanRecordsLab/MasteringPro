@@ -20,7 +20,7 @@ billingRoutes.get('/packs', async (c) => {
   return c.json({
     packs: await Promise.all(Object.values(CREDIT_PACKS).map(packToPublicDict)),
     stripe_enabled: stripeConfigured(),
-    currency: 'pln',
+    currency: 'usd',
   });
 });
 
@@ -91,7 +91,7 @@ billingRoutes.post('/checkout', requireUser, async (c) => {
         description: `MasteringPro — ${pack.credits} utworów`,
         metadata: { user_id: user.id, pack_id: pack.id, credits: String(pack.credits) },
       },
-      locale: 'pl',
+      locale: 'auto',
       custom_text: {
         submit: {
           message:
