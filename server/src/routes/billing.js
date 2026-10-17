@@ -10,14 +10,15 @@ import {
   packToPublicDict,
   stripeConfigured,
 } from '../services/stripeBilling.js';
+import { processStripeEvent } from '../services/stripeEvents.js';
 
 export const billingRoutes = new Hono();
 
 // Public catalog — no auth required, so the WordPress pricing page (or any
 // future in-app pricing screen) can fetch it directly.
-billingRoutes.get('/packs', (c) => {
+billingRoutes.get('/packs', async (c) => {
   return c.json({
-    packs: Object.values(CREDIT_PACKS).map(packToPublicDict),
+    packs: await Promise.all(Object.values(CREDIT_PACKS).map(packToPublicDict)),
     stripe_enabled: stripeConfigured(),
     currency: 'pln',
   });
@@ -85,6 +86,18 @@ billingRoutes.post('/checkout', requireUser, async (c) => {
       customer_email: user.email,
       client_reference_id: user.id,
       metadata: { user_id: user.id, pack_id: pack.id, credits: String(pack.credits) },
+      // same metadata on the payment itself, so a refund can be traced back to the user
+      payment_intent_data: {
+        description: `MasteringPro — ${pack.credits} utworów`,
+        metadata: { user_id: user.id, pack_id: pack.id, credits: String(pack.credits) },
+      },
+      locale: 'pl',
+      custom_text: {
+        submit: {
+          message:
+            'Kupując, wyraźnie zgadzasz się na natychmiastowe dostarczenie kredytów (treść cyfrowa) i przyjmujesz do wiadomości, że po ich wykorzystaniu tracisz prawo odstąpienia od umowy. Kredyty nie wygasają.',
+        },
+      },
     });
     return c.json({ checkout_url: session.url, session_id: session.id });
   } catch (e) {
@@ -111,56 +124,6 @@ billingRoutes.post('/webhook/stripe', async (c) => {
     return c.json({ error: 'Invalid signature: ' + e.message }, 400);
   }
 
-  if (event.type !== 'checkout.session.completed') {
-    return c.json({ status: 'ignored', type: event.type });
-  }
-
-  const session = event.data.object;
-  if (session.payment_status !== 'paid') {
-    return c.json({ status: 'ignored', reason: 'not paid' });
-  }
-
-  const db = getDb();
-  const existing = await db
-    .select()
-    .from(schema.creditPurchases)
-    .where(eq(schema.creditPurchases.stripeSessionId, session.id))
-    .limit(1);
-  if (existing.length) {
-    return c.json({ status: 'already_processed', session_id: session.id });
-  }
-
-  const metadata = session.metadata || {};
-  const userId = metadata.user_id || session.client_reference_id;
-  const packId = metadata.pack_id || 'starter';
-  let creditsToAdd = parseInt(metadata.credits, 10) || 0;
-  if (creditsToAdd <= 0) creditsToAdd = CREDIT_PACKS[packId]?.credits || 0;
-
-  if (!userId || creditsToAdd <= 0) {
-    console.error('[billing] Webhook missing user_id or credits:', metadata);
-    return c.json({ error: 'Invalid session metadata' }, 400);
-  }
-
-  const userRows = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
-  if (!userRows.length) {
-    console.warn('[billing] Stripe webhook: user %s not found', userId);
-    return c.json({ error: 'User not found' }, 404);
-  }
-
-  await db
-    .update(schema.users)
-    .set({ credits: sql`${schema.users.credits} + ${creditsToAdd}` })
-    .where(eq(schema.users.id, userId));
-
-  await db.insert(schema.creditPurchases).values({
-    userId,
-    stripeSessionId: session.id,
-    packId,
-    creditsAdded: creditsToAdd,
-    amountTotal: session.amount_total ?? null,
-    currency: session.currency ?? null,
-  });
-
-  console.log(`[billing] Stripe: added ${creditsToAdd} credits to user ${userId} (pack=${packId})`);
-  return c.json({ status: 'success', credits_added: creditsToAdd, user_id: userId });
+  const result = await processStripeEvent(getDb(), event);
+  return c.json(result.body, result.status ?? 200);
 });

@@ -1,47 +1,20 @@
-// Stripe credit packs (one-time payments, no subscriptions) — same shape as
-// Metadata Engine's stripe_billing.py, same Stripe account/keys, so both
-// products' payments and payouts land in one place. Prices are independent
-// per product: mastering AI runs cost more per unit than a metadata job, so
-// these do NOT mirror Metadata Engine's PLN/USD amounts, only its structure.
+// Stripe billing — ONE paid level for everyone: a single one-time pack of tracks. No subscription, no auto-renewal,
+// no card-on-file trial; credits never expire. The price lives in Stripe (the Price object is the single source of truth,
+// so changing the price never needs a deploy); only the number of tracks per pack is configured here (PACK_CREDITS).
+// Same Stripe account/keys as Metadata Engine, so payments and payouts land in one place.
 import Stripe from 'stripe';
 import { config } from '../config.js';
 
+export const PACK_CREDITS = Math.max(1, parseInt(process.env.PACK_CREDITS || '', 10) || 20);
+
 export const CREDIT_PACKS = {
-  starter: {
-    id: 'starter',
-    name: 'Starter Pack',
-    credits: 5,
-    priceGrosz: 7900, // 79.00 PLN
-    description: 'Wypróbuj AI Mastering na kilku utworach.',
+  mastering: {
+    id: 'mastering',
+    name: 'Pakiet MasteringPro',
+    credits: PACK_CREDITS,
+    description: `${PACK_CREDITS} utworów do masteringu. Bez abonamentu, bez odnawiania, kredyty nie wygasają.`,
     popular: false,
-    envPriceKey: 'STRIPE_PRICE_PACK_STARTER',
-  },
-  producer: {
-    id: 'producer',
-    name: 'Producer Pack',
-    credits: 20,
-    priceGrosz: 24900, // 249.00 PLN
-    description: 'Dla producentów regularnie wydających utwory.',
-    popular: true,
-    envPriceKey: 'STRIPE_PRICE_PACK_PRODUCER',
-  },
-  label: {
-    id: 'label',
-    name: 'Label Pack',
-    credits: 60,
-    priceGrosz: 59900, // 599.00 PLN
-    description: 'Pełny album lub EP z zapasem na poprawki.',
-    popular: false,
-    envPriceKey: 'STRIPE_PRICE_PACK_LABEL',
-  },
-  studio: {
-    id: 'studio',
-    name: 'Studio Pack',
-    credits: 150,
-    priceGrosz: 119900, // 1199.00 PLN
-    description: 'Duży wolumen — labele i agencje.',
-    popular: false,
-    envPriceKey: 'STRIPE_PRICE_PACK_STUDIO',
+    envPriceKey: 'STRIPE_PRICE_PACK',
   },
 };
 
@@ -60,14 +33,33 @@ export function packPriceId(pack) {
   return pack.envPriceKey ? process.env[pack.envPriceKey] || '' : '';
 }
 
-export function packToPublicDict(pack) {
+// Price object cache (10 min) — the amount shown in the app is always the amount Stripe will charge.
+const priceCache = new Map();
+async function stripePrice(priceId) {
+  const hit = priceCache.get(priceId);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return hit.price;
+  const p = await getStripe().prices.retrieve(priceId);
+  const price = p && p.active && p.type === 'one_time' && p.unit_amount != null
+    ? { amount: p.unit_amount, currency: p.currency }
+    : null;
+  priceCache.set(priceId, { at: Date.now(), price });
+  return price;
+}
+
+export async function packToPublicDict(pack) {
+  const priceId = packPriceId(pack);
+  let price = null;
+  if (priceId && config.stripe.secretKey) {
+    try { price = await stripePrice(priceId); } catch (e) { console.error('[billing] price lookup failed:', e.message); }
+  }
   return {
     id: pack.id,
     name: pack.name,
     credits: pack.credits,
-    price_pln: pack.priceGrosz / 100,
+    price_pln: price && price.currency === 'pln' ? price.amount / 100 : null,
+    currency: price ? price.currency : 'pln',
     description: pack.description,
     popular: pack.popular,
-    available: Boolean(packPriceId(pack)),
+    available: Boolean(price),
   };
 }

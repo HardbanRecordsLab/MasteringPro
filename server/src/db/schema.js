@@ -41,6 +41,9 @@ export const creditPurchases = pgTable('credit_purchases', {
   creditsAdded: integer('credits_added').notNull(),
   amountTotal: integer('amount_total'),
   currency: text('currency'),
+  // lets a refund (charge.refunded) be traced back to the purchase and the credits taken back
+  paymentIntentId: text('payment_intent_id'),
+  refundedAt: timestamp('refunded_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

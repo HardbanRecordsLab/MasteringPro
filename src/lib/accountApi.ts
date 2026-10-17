@@ -20,10 +20,11 @@ export interface CreditPack {
   id: string;
   name: string;
   credits: number;
-  price_pln: number;
+  /** null until the Stripe Price is configured; the amount always comes from Stripe. */
+  price_pln: number | null;
   description: string;
   popular: boolean;
-  /** false until STRIPE_PRICE_PACK_* is configured on the server for this pack. */
+  /** false until STRIPE_PRICE_PACK is configured on the server for this pack. */
   available: boolean;
 }
 
