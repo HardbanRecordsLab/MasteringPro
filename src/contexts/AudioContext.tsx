@@ -1,3 +1,4 @@
+import { decodeNative } from '@/lib/audioDecode';
 import React, { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react';
 import { MasteringEngine, loadMasteringWorklets } from '@/lib/audioEngine';
 import type { SaturationMode } from '@/lib/saturationCurve';
@@ -175,6 +176,10 @@ export interface AudioState {
   referenceName: string | null;
   /** key + tempo, detected async after load */
   musical: MusicalContent | null;
+  /** the file exactly as loaded; set only while the working buffer is a restored copy (see replaceAudioBuffer) */
+  originalBuffer: AudioBuffer | null;
+  /** what was done to the working buffer, e.g. "Restoration" (null = untouched) */
+  workingLabel: string | null;
 }
 
 export type SnapshotSlot = 'A' | 'B' | 'C' | 'D';
@@ -185,6 +190,9 @@ interface AudioContextType {
   engine: MasteringEngine | null;
   loadFile: (file: File) => Promise<void>;
   loadReference: (file: File) => Promise<void>;
+  /** swap the working buffer for a processed copy (e.g. restoration). The original is kept for `revertAudioBuffer`. */
+  replaceAudioBuffer: (buffer: AudioBuffer, label: string) => void;
+  revertAudioBuffer: () => void;
   play: () => void;
   stop: () => void;
   toggleLoop: () => void;
@@ -215,6 +223,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     file: null, fileInfo: null, audioBuffer: null,
     isPlaying: false, isLooping: false, currentTime: 0, duration: 0,
     referenceBuffer: null, referenceMetrics: null, referenceName: null, musical: null,
+    originalBuffer: null, workingLabel: null,
   });
 
   const [processing, setProcessing] = useState<ProcessingParams>(DEFAULT_PROCESSING);
@@ -402,7 +411,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const loadFile = useCallback(async (file: File) => {
     const { ctx } = getCtxAndEngine();
     const arrayBuffer = await file.arrayBuffer();
-    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const audioBuffer = await decodeNative(arrayBuffer, ctx);
 
     let peak = 0;
     for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
@@ -415,7 +424,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
     setState(prev => ({
       ...prev,
-      file, audioBuffer, musical: null,
+      file, audioBuffer, musical: null, originalBuffer: null, workingLabel: null,
       isPlaying: false, isLooping: false, currentTime: 0,
       duration: audioBuffer.duration,
       fileInfo: {
@@ -437,7 +446,7 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const loadReference = useCallback(async (file: File) => {
     const { ctx } = getCtxAndEngine();
     const arrayBuffer = await file.arrayBuffer();
-    const referenceBuffer = await ctx.decodeAudioData(arrayBuffer);
+    const referenceBuffer = await decodeNative(arrayBuffer, ctx);
     const referenceMetrics = analyzeAudio(referenceBuffer);
 
     setState(prev => ({
@@ -515,10 +524,32 @@ export const AudioProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (state.isPlaying) play();
   }, [state.isPlaying, play]);
 
+  const swapBuffer = useCallback((buffer: AudioBuffer, restoreOriginal: boolean, label: string | null) => {
+    stop();
+    let peak = 0;
+    for (let c = 0; c < buffer.numberOfChannels; c++) {
+      const d = buffer.getChannelData(c);
+      for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > peak) peak = a; }
+    }
+    setState(prev => ({
+      ...prev,
+      audioBuffer: buffer,
+      originalBuffer: restoreOriginal ? null : (prev.originalBuffer ?? prev.audioBuffer),
+      workingLabel: restoreOriginal ? null : label,
+      duration: buffer.duration,
+      fileInfo: prev.fileInfo ? { ...prev.fileInfo, duration: buffer.duration, peakLevel: 20 * Math.log10(peak || 0.0001) } : prev.fileInfo,
+    }));
+  }, [stop]);
+
+  const replaceAudioBuffer = useCallback((buffer: AudioBuffer, label: string) => swapBuffer(buffer, false, label), [swapBuffer]);
+  const revertAudioBuffer = useCallback(() => {
+    if (state.originalBuffer) swapBuffer(state.originalBuffer, true, null);
+  }, [state.originalBuffer, swapBuffer]);
+
   return (
     <AudioCtx.Provider value={{
       state, processing, engine: engineRef.current,
-      loadFile, loadReference, play, stop, toggleLoop, seek,
+      loadFile, loadReference, replaceAudioBuffer, revertAudioBuffer, play, stop, toggleLoop, seek,
       setProcessing, applyProcessingToEngine,
       undo, redo, canUndo, canRedo,
       snapshots, saveSnapshot, recallSnapshot, resetProcessing,

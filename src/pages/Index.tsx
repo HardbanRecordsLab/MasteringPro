@@ -30,6 +30,7 @@ import AccountPanel from '@/components/mastering/AccountPanel';
 import SnapshotBar from '@/components/mastering/SnapshotBar';
 import PresetLibrary from '@/components/mastering/PresetLibrary';
 import ReferenceTrack from '@/components/mastering/ReferenceTrack';
+import RestorationPanel from '@/components/mastering/RestorationPanel';
 import SessionHistory from '@/components/mastering/SessionHistory';
 import ExportPanel from '@/components/mastering/ExportPanel';
 import AIFixPanel from '@/components/mastering/AIFixPanel';
@@ -72,6 +73,9 @@ const MasteringApp = () => {
 
 
 
+  // NOTE: LeftRail / MainArea are plain render functions on purpose (called as {LeftRail()}, not <LeftRail />).
+  // Defined as components inside this component they would get a new identity on every render — i.e. every
+  // playback tick — and React would unmount and rebuild every panel (losing its state) 60 times a second.
   // Left rail content per mode
   const LeftRail = () => {
     if (mode === 'quick') return (
@@ -87,6 +91,7 @@ const MasteringApp = () => {
         <div data-tour="copilot"><AICopilotChat /></div>
         <div data-tour="ai-presets"><AIPresetsPanel /></div>
         <PresetLibrary />
+        <RestorationPanel />
         <div data-tour="reference"><ReferenceTrack /></div>
         {mode === 'pro' && <SessionHistory />}
         <AccountPanel />
@@ -196,7 +201,7 @@ const MasteringApp = () => {
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-[88vw] sm:w-96 overflow-y-auto p-3 space-y-4">
-            <LeftRail />
+            {LeftRail()}
           </SheetContent>
         </Sheet>
         <Sheet>
@@ -213,11 +218,11 @@ const MasteringApp = () => {
 
       <div className="flex-1 flex overflow-hidden">
         <aside className="hidden xl:block w-72 border-r border-border overflow-y-auto flex-shrink-0 p-3 space-y-4">
-          <LeftRail />
+          {LeftRail()}
         </aside>
 
         <main className="flex-1 overflow-y-auto p-2 sm:p-3 space-y-4 min-w-0">
-          <MainArea />
+          {MainArea()}
         </main>
 
         <aside className="hidden xl:block w-56 border-l border-border overflow-y-auto flex-shrink-0">

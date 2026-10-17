@@ -187,3 +187,38 @@ describe('musical content — key detection', () => {
     expect(key).toContain('major');
   });
 });
+
+import { readSampleRate } from '@/lib/audioDecode';
+
+describe('native-rate decoding — container header parsing', () => {
+  const b = (...n: number[]) => Uint8Array.from(n);
+  it('reads the rate of a WAV (any chunk order)', () => {
+    const wav = new Uint8Array(64);
+    wav.set([...'RIFF'].map((c) => c.charCodeAt(0)), 0);
+    wav.set([...'WAVE'].map((c) => c.charCodeAt(0)), 8);
+    wav.set([...'LIST'].map((c) => c.charCodeAt(0)), 12); new DataView(wav.buffer).setUint32(16, 4, true); // a 4-byte chunk first
+    wav.set([...'fmt '].map((c) => c.charCodeAt(0)), 24); new DataView(wav.buffer).setUint32(28, 16, true);
+    new DataView(wav.buffer).setUint32(36, 96000, true);                                          // sample rate at fmt+4
+    expect(readSampleRate(wav)).toBe(96000);
+  });
+  it('reads the rate of FLAC, MP3 and AIFF', () => {
+    const flac = new Uint8Array(40); flac.set([0x66, 0x4c, 0x61, 0x43], 0);
+    flac[18] = 0x0b; flac[19] = 0xb8; flac[20] = 0x00;                                             // 48000 = 0x0BB80, 20 bits
+    expect(readSampleRate(flac)).toBe(48000);
+
+    const mp3 = new Uint8Array(40); mp3.set([0xff, 0xfb, 0x90, 0x00], 0);                          // MPEG1 L3, 44.1 kHz
+    expect(readSampleRate(mp3)).toBe(44100);
+    const mp3b = new Uint8Array(40); mp3b.set([0xff, 0xfb, 0x94, 0x00], 0);                        // MPEG1 L3, 48 kHz
+    expect(readSampleRate(mp3b)).toBe(48000);
+
+    const aiff = new Uint8Array(64);
+    aiff.set([...'FORM'].map((c) => c.charCodeAt(0)), 0); aiff.set([...'AIFF'].map((c) => c.charCodeAt(0)), 8);
+    aiff.set([...'COMM'].map((c) => c.charCodeAt(0)), 12); new DataView(aiff.buffer).setUint32(16, 18, false);
+    aiff.set([0x40, 0x0e, 0xac, 0x44, 0, 0, 0, 0, 0, 0], 28);                                       // 44100 as 80-bit extended
+    expect(readSampleRate(aiff)).toBe(44100);
+  });
+  it('returns null for unknown data', () => {
+    expect(readSampleRate(new Uint8Array(100))).toBeNull();
+    expect(readSampleRate(b(1, 2, 3))).toBeNull();
+  });
+});
