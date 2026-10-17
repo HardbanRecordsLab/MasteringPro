@@ -30,6 +30,8 @@ export interface StereoMatch {
 
 export interface MatchResult {
   curve: MatchCurve;
+  /** tonal difference reference − track on the curve grid, level offset removed and smoothed, BEFORE limiting (dB) */
+  diff: number[];
   /** rms of the remaining tonal difference (dB), before and after applying the curve at full strength */
   rmsBeforeDb: number;
   rmsAfterDb: number;
@@ -127,6 +129,7 @@ export function computeMatch(cur: TrackProfile, ref: TrackProfile, opts: MatchOp
 
   return {
     curve: { f, g },
+    diff: smooth,
     rmsBeforeDb: Math.round(rmsBeforeDb * 10) / 10,
     rmsAfterDb: Math.round(rmsAfterDb * 10) / 10,
     loudnessDeltaLu: Math.round((ref.lufs - cur.lufs) * 10) / 10,

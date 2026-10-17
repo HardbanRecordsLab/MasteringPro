@@ -37,6 +37,7 @@ const Header = () => {
               )}
             </div>
           )}
+          <Link to="/album" className="hidden sm:inline text-[11px] font-mono uppercase tracking-wider text-primary hover:text-foreground" title="Master a whole album">Album mode</Link>
           <a
             href="https://hardbanrecordslab.online/"
             className="hidden sm:inline text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground"
