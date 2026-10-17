@@ -26,6 +26,7 @@ import MeteringPanel from '@/components/mastering/MeteringPanel';
 import AIPresetsPanel from '@/components/mastering/AIPresetsPanel';
 import SpectralDiff from '@/components/mastering/SpectralDiff';
 import LoudnessPenalty from '@/components/mastering/LoudnessPenalty';
+import DeliveryCheck from '@/components/mastering/DeliveryCheck';
 import AccountPanel from '@/components/mastering/AccountPanel';
 import SnapshotBar from '@/components/mastering/SnapshotBar';
 import PresetLibrary from '@/components/mastering/PresetLibrary';
@@ -107,6 +108,7 @@ const MasteringApp = () => {
           <div data-tour="quality"><QualityScore /></div>
           <SpectralDiff />
           <LoudnessPenalty />
+          <DeliveryCheck />
         </>
       );
     }
@@ -120,6 +122,7 @@ const MasteringApp = () => {
           </div>
           <SpectralDiff />
           <LoudnessPenalty />
+          <DeliveryCheck />
           <div data-tour="export"><ExportPanel /></div>
           <SessionHistory />
         </>
@@ -171,6 +174,7 @@ const MasteringApp = () => {
         </div>
 
         <LoudnessPenalty />
+        <DeliveryCheck />
         <div data-tour="export"><ExportPanel /></div>
       </>
     );
