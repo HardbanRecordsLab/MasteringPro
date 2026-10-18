@@ -3,7 +3,7 @@
  * how much of the damage was found, how close the repair is to the original, and that clean material is left alone.
  */
 import { describe, it, expect } from 'vitest';
-import { declick } from '@/lib/dsp/declick';
+import { declick, countClicks } from '@/lib/dsp/declick';
 import { declip, detectClipping } from '@/lib/dsp/declip';
 
 const SR = 48000;
@@ -58,6 +58,13 @@ function errRms(a: Float32Array, b: Float32Array, ranges: Array<[number, number]
   return Math.sqrt(s / Math.max(1, n));
 }
 
+/** musicLike() starts a note every 0.5 s: move a click position out of the 40 ms around each attack */
+function nudgeFromOnset(pos: number): number {
+  const period = SR / 2;
+  const phase = pos % period;
+  return phase < SR * 0.04 || phase > period - SR * 0.04 ? pos + Math.round(SR * 0.08) : pos;
+}
+
 describe('declick', () => {
   it('leaves clean, dynamic material alone (no false repairs)', () => {
     const clean = musicLike(5, 3);
@@ -74,7 +81,9 @@ describe('declick', () => {
     const spots: Array<[number, number]> = [];
     // 12 clicks of 1–4 samples, 3 bursts of 18 samples
     for (let k = 0; k < 15; k++) {
-      const pos = 6000 + Math.floor((k / 15) * (x.length - 12000)) + Math.floor(r() * 500);
+      const pos0 = 6000 + Math.floor((k / 15) * (x.length - 12000)) + Math.floor(r() * 500);
+      // keep clicks clear of the synthetic notes' attacks (within 12 ms before one they would read as part of the onset)
+      const pos = nudgeFromOnset(pos0);
       const len = k < 12 ? 1 + Math.floor(r() * 4) : 18;
       for (let i = 0; i < len; i++) x[pos + i] += (r() < 0.5 ? -1 : 1) * (0.25 + r() * 0.45);
       spots.push([pos, pos + len - 1]);
@@ -93,6 +102,25 @@ describe('declick', () => {
       maxOutside = Math.max(maxOutside, Math.abs(x[i] - clean[i]));
     }
     expect(maxOutside).toBeLessThan(1e-3);
+  });
+
+  it('does not "repair" an attack: the same spike is a click on a steady bed but music when a loud decay follows it', () => {
+    const n = SR * 4;
+    const bed = (): Float32Array => {
+      const x = new Float32Array(n);
+      const r = rng(5);
+      for (let i = 0; i < n; i++) x[i] = 0.05 * Math.sin((2 * Math.PI * 220 * i) / SR) + 0.03 * Math.sin((2 * Math.PI * 330 * i) / SR) + (r() - 0.5) * 0.004;
+      return x;
+    };
+    const at = SR * 2;
+    const click = bed();
+    for (let i = 0; i < 3; i++) click[at + i] += 0.6;                         // isolated spike on steady material
+    const hit = bed();
+    for (let i = 0; i < 3; i++) hit[at + i] += 0.6;                           // same spike …
+    const r = rng(9);
+    for (let k = Math.round(SR * 0.002); k < SR * 0.1; k++) hit[at + k] += (r() - 0.5) * 0.9 * Math.exp(-k / (SR * 0.03));   // … that opens a loud decaying hit
+    expect(countClicks(click, SR)).toBeGreaterThanOrEqual(1);
+    expect(countClicks(hit, SR)).toBe(0);
   });
 
   it('is deterministic and never produces NaN / Infinity', () => {
@@ -119,6 +147,29 @@ describe('declip', () => {
     expect(det).not.toBeNull();
     expect(det!.level).toBeCloseTo(0.28, 3);
     expect(det!.runs).toBeGreaterThan(20);
+  });
+
+  it('does not mistake repeated values in quiet material for clipping (real-track regression)', () => {
+    // a loud master whose peaks reach ±0.9, with a few runs of identical samples far below the peak (held values in a
+    // low-bit-depth passage). This used to be "detected" as a clipping ceiling at −9 dB and 160 000 good samples were
+    // rewritten, costing the track 4 dB.
+    const x = musicLike(6, 33);
+    const peak = x.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
+    for (let i = 0; i < x.length; i++) x[i] = (x[i] / peak) * 0.9;
+    for (let k = 0; k < 12; k++) { const at = 5000 + k * 9000; x[at] = 0.3665; x[at + 1] = 0.3665; x[at + 2] = 0.3665; }
+    expect(detectClipping(x)).toBeNull();
+    const y = Float32Array.from(x);
+    expect(declip(y, SR).runs).toBe(0);
+    expect(Array.from(y)).toEqual(Array.from(x));
+  });
+
+  it('still finds genuine clipping when a loud click sits above the ceiling', () => {
+    const clean = musicLike(4, 11);
+    const x = Float32Array.from(clean, (v) => Math.max(-0.28, Math.min(0.28, v)));
+    x[20000] = 0.95;                                              // a click above the clipped ceiling
+    const det = detectClipping(x);
+    expect(det).not.toBeNull();
+    expect(det!.level).toBeCloseTo(0.28, 3);
   });
 
   it('restores clipped peaks much closer to the original', () => {

@@ -52,6 +52,13 @@ export function detectClipping(x: ArrayLike<number>, minRuns = 4): ClipDetection
   if (bestKey < 0) return null;
   const e = levels.get(bestKey)!;
   const level = e.sum / e.count;
+  // A real clipper flattens the TOP of the signal: next to nothing rises above the ceiling (only the odd click). A
+  // repeated value in quiet material has loud music above it — "declipping" that rebuilt 160 000 perfectly good samples of
+  // a real track and cost it 4 dB. So: if more than 0.05 % of the samples are louder than the plateau it is not a clipper.
+  const above = level * 1.05;
+  let over = 0;
+  for (let q = 0; q < n; q++) if (Math.abs(x[q]) > above) over++;
+  if (over > n * 0.0005) return null;
   // count runs on the plateau (±1 step) for the report
   const tol = level * 1e-4;
   let runs = 0;

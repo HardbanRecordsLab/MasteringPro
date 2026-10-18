@@ -42,7 +42,35 @@ function medianAbs(a: Float32Array, from: number, to: number, scratch: Float32Ar
   return s[n >> 1];
 }
 
-function detect(x: Float32Array, order: number, T: number, maxLen: number): Array<[number, number]> {
+/**
+ * A click is a blemish ON the music: the level after it matches the level before it. A drum hit / synth stab is an ONSET:
+ * what follows is much louder than what came before. Studio dance tracks are full of such transients that look like
+ * clicks to a residual detector (97–900 false "clicks" in a 3-minute electronic master) and repairing them blunts the drums.
+ */
+/** Mean power of x[a..b) with outliers (other clicks in the window) capped at 4× the median magnitude. */
+function robustEnergy(x: Float32Array, a: number, b: number): number {
+  const m = new Float32Array(b - a);
+  for (let i = a; i < b; i++) m[i - a] = Math.abs(x[i]);
+  const cap = 4 * m.slice().sort()[m.length >> 1];
+  let e = 0;
+  for (let i = 0; i < m.length; i++) { const v = Math.min(m[i], cap); e += v * v; }
+  return e / m.length;
+}
+
+function isOnset(x: Float32Array, s: number, e: number, sampleRate: number): boolean {
+  const w = Math.max(32, Math.round(sampleRate * 0.012));
+  const g = Math.max(4, Math.round(sampleRate * 0.0008));
+  const preA = s - g - w, preB = s - g, postA = e + g + 1, postB = e + g + 1 + w;
+  if (preA < 0 || postB > x.length) return false;
+  const pre = robustEnergy(x, preA, preB), post = robustEnergy(x, postA, postB);
+  if (post > 4.5 * pre + 1e-12) return true;                // the attack itself: what follows is far louder
+  // inside the body of a hit: the 12 ms before this burst are already far louder than the 12 ms ending 40 ms earlier
+  const farB = s - g - 3 * w, farA = farB - w;
+  if (farA >= 0 && pre > 4.5 * robustEnergy(x, farA, farB) + 1e-12) return true;
+  return false;
+}
+
+function detect(x: Float32Array, order: number, T: number, maxLen: number, sampleRate: number): Array<[number, number]> {
   const n = x.length;
   const bursts: Array<[number, number]> = [];
   if (n < BLOCK + 2 * order) return bursts;
@@ -101,7 +129,7 @@ function detect(x: Float32Array, order: number, T: number, maxLen: number): Arra
     if (last && bu[0] <= last[1] + 2) last[1] = Math.max(last[1], bu[1]);
     else merged.push([bu[0], bu[1]]);
   }
-  return merged;
+  return merged.filter(([s, e]) => !isOnset(x, s, e, sampleRate));
 }
 
 /** Detection only: how many click bursts would be repaired (used for the diagnosis, nothing is modified). */
@@ -109,7 +137,7 @@ export function countClicks(x: Float32Array, sampleRate: number, opts: DeclickOp
   const sensitivity = Math.min(10, Math.max(1, opts.sensitivity ?? 5));
   const order = opts.order ?? (sampleRate > 64000 ? 32 : 24);
   const maxLen = opts.maxLength ?? Math.max(8, Math.round(sampleRate * 0.001));
-  return detect(x, order, 9 - 0.6 * sensitivity, maxLen).length;
+  return detect(x, order, 9 - 0.6 * sensitivity, maxLen, sampleRate).length;
 }
 
 /** Remove clicks from one channel, in place. */
@@ -123,7 +151,7 @@ export function declick(x: Float32Array, sampleRate: number, opts: DeclickOption
   let bursts = 0;
   let samples = 0;
   for (let pass = 0; pass < passes; pass++) {
-    const found = detect(x, order, T, maxLen);
+    const found = detect(x, order, T, maxLen, sampleRate);
     if (found.length === 0) break;
     for (const [s, e] of found) {
       const a = estimateARAround(x, s, e, order);

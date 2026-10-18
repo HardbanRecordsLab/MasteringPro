@@ -43,6 +43,10 @@ const RestorationPanel = () => {
 
   if (!state.audioBuffer) return null;
 
+  // Dozens of sharp transients per minute are just music (hats, plucks, even after the onset filter); real crackle is denser.
+  const MIN_CLICKS_PER_MIN = 90;
+  const clicksPerMin = (n: number) => n / Math.max(1 / 60, (state.audioBuffer?.duration ?? 60) / 60);
+
   const analyse = async () => {
     setBusy('analyse');
     setReport(null);
@@ -52,10 +56,10 @@ const RestorationPanel = () => {
       setOn({
         hum: !!d.hum,
         clip: !!d.clipping,
-        clicks: d.clicks > 0,
+        clicks: clicksPerMin(d.clicks) >= MIN_CLICKS_PER_MIN,
         noise: !!d.noise && d.noise.confidence > 0.2 && d.noise.floorDb > -75,
       });
-      const problems = [d.hum && 'hum', d.clipping && 'clipping', d.clicks > 0 && 'clicks', d.noise && d.noise.floorDb > -75 && 'noise'].filter(Boolean);
+      const problems = [d.hum && 'hum', d.clipping && 'clipping', clicksPerMin(d.clicks) >= MIN_CLICKS_PER_MIN && 'clicks', d.noise && d.noise.floorDb > -75 && 'noise'].filter(Boolean);
       toast[problems.length ? 'info' : 'success'](problems.length ? `Found: ${problems.join(', ')}` : 'No restoration issues found — the file is clean');
     } catch (e) {
       toast.error('Analysis failed');
@@ -143,7 +147,7 @@ const RestorationPanel = () => {
             <Row
               icon={<Zap className="w-3.5 h-3.5" />} title="Clicks & crackle"
               detail={diag.clicks > 0 ? `~${diag.clicks} found` : 'not detected'}
-              found={diag.clicks > 0} checked={on.clicks} onChange={(v) => setOn((s) => ({ ...s, clicks: v }))}
+              found={clicksPerMin(diag.clicks) >= MIN_CLICKS_PER_MIN} checked={on.clicks} onChange={(v) => setOn((s) => ({ ...s, clicks: v }))}
             />
             <Row
               icon={<VolumeX className="w-3.5 h-3.5" />} title="Background noise"
