@@ -45,7 +45,7 @@ const RestorationPanel = () => {
 
   // Dozens of sharp transients per minute are just music (hats, plucks, even after the onset filter); real crackle is denser.
   const MIN_CLICKS_PER_MIN = 90;
-  const clicksPerMin = (n: number) => n / Math.max(1 / 60, (state.audioBuffer?.duration ?? 60) / 60);
+  const clicksPerMin = (n: number) => n / Math.max(1, state.audioBuffer?.numberOfChannels ?? 1) / Math.max(1 / 60, (state.audioBuffer?.duration ?? 60) / 60); // diagnosis sums the channels
 
   const analyse = async () => {
     setBusy('analyse');
