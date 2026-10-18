@@ -89,6 +89,9 @@ export const config = {
   // switch on with EXPORT_METERING=true (see HRL Handbook ch. 12). While off, exports are not charged.
   exportMetering: bool(process.env.EXPORT_METERING, false),
 
+  // Operator accounts (comma-separated e-mails): full access, never charged for exports, no AI daily cap.
+  adminEmails: list(process.env.ADMIN_EMAILS).map((e) => e.toLowerCase()),
+
   // Stripe — same account/keys as Metadata Engine (shared, per 2026-09-23
   // decision), credit packs defined in services/stripeBilling.js.
   stripe: {

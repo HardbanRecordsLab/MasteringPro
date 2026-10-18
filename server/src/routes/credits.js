@@ -26,7 +26,8 @@ creditsRoutes.post('/export', requireUser, async (c) => {
   }
 
   const user = c.get('user');
-  if (!config.exportMetering) {
+  if (!config.exportMetering || config.adminEmails.includes(String(user.email || '').toLowerCase())) {
+    // metering off, or an operator account: nothing is charged
     // metering not switched on yet: nothing is charged
     return c.json({ charged: 0, covered: tracks.length, credits: user.credits ?? 0, covered_until: null, window_days: EXPORT_WINDOW_DAYS, metering: false });
   }
