@@ -31,7 +31,7 @@ export interface AlbumJob {
   formatId: string;
   dither: DitherMode;
   targetPeakDb: number;
-  album: { title: string; performer: string };
+  album: { title: string; performer: string; year?: string; genre?: string };
   onProgress?: (trackIndex: number, label: string, pct: number) => void;
   signal?: AbortSignal;
 }
@@ -119,7 +119,10 @@ export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: A
     const finished = withFades(rendered, jt.fadeInMs, jt.fadeOutMs);
 
     onProgress?.(i, 'Encoding', 95);
-    const { data } = await encodeFormat(finished, fmt, dither);
+    const { data } = await encodeFormat(finished, fmt, dither, {
+      title: jt.info.name, artist: album.performer, album: album.title, year: album.year, genre: album.genre,
+      comment: `Track ${i + 1} of ${tracks.length}`,
+    });
     const name = `${pad2(i + 1)} - ${sanitizeFileName(jt.info.name)}.${fmt.extension}`;
     zip.file(name, data);
     files.push(name);

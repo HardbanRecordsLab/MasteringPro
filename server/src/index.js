@@ -16,6 +16,7 @@ import { renderRoutes } from "./routes/renders.js";
 import { referenceRoutes } from "./routes/references.js";
 import { albumRoutes } from "./routes/albums.js";
 import { billingRoutes } from "./routes/billing.js";
+import { passportRoutes } from "./routes/passport.js";
 
 const app = new Hono();
 
@@ -75,6 +76,7 @@ if (dbEnabled()) {
   app.route("/api/albums", albumRoutes);
   app.route("/api/billing", billingRoutes);
   app.route("/api/credits", creditsRoutes);
+  app.route("/api/passport", passportRoutes);
 
   // AI Mastering / Copilot hit real backend compute and cost real money to
   // run — included in the price of a track: signed-in account + daily cap, no credits spent.
@@ -89,7 +91,7 @@ if (dbEnabled()) {
   app.post("/api/ai-mastering", aiMasteringHandler);
   app.post("/api/ai-copilot", aiCopilotHandler);
   const disabled = (c) => c.json({ error: "Accounts are not enabled on this server" }, 501);
-  for (const p of ["/api/auth/*", "/api/projects/*", "/api/presets/*", "/api/renders/*", "/api/references/*", "/api/albums/*", "/api/billing/*", "/api/credits/*"]) {
+  for (const p of ["/api/auth/*", "/api/projects/*", "/api/presets/*", "/api/renders/*", "/api/references/*", "/api/albums/*", "/api/billing/*", "/api/credits/*", "/api/passport/*"]) {
     app.all(p, disabled);
   }
 }

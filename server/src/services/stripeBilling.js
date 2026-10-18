@@ -16,6 +16,14 @@ export const CREDIT_PACKS = {
     popular: false,
     envPriceKey: 'STRIPE_PRICE_PACK_SINGLE',
   },
+  three: {
+    id: 'three',
+    name: '3 utwory',
+    credits: 3,
+    description: 'Trzy utwory — singiel z remiksami albo mała EP-ka. Kredyty nie wygasają.',
+    popular: false,
+    envPriceKey: 'STRIPE_PRICE_PACK_THREE',
+  },
   ten: {
     id: 'ten',
     name: '10 utworów',

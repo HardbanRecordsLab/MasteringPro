@@ -1,4 +1,6 @@
 import { quantizeChannels, type DitherMode } from '@/lib/quantize';
+import { tagAiff, tagFlac, tagMp3, tagWav, type ReleaseMeta } from '@/lib/tags';
+import { passportInput, type PassportSigner } from '@/lib/passport';
 import JSZip from 'jszip';
 import type { ProcessingParams } from '@/contexts/AudioContext';
 import { renderProcessed } from '@/lib/offlineRender';
@@ -197,6 +199,23 @@ export interface ExportOptions {
   /** Deliver at this sample rate (resampled from the master). Default: source SR. */
   sampleRate?: number;
   onProgress?: (format: string, progress: number) => void;
+  /** Release info written into the files (title, artist, album, year, ISRC…). */
+  meta?: ReleaseMeta;
+  /** Signs a master passport per exported file (needs an account); null = skip. */
+  sign?: PassportSigner;
+}
+
+async function passportFor(sign: PassportSigner | undefined, name: string, data: ArrayBuffer | Uint8Array, fmt: ExportFormat,
+  buffer: AudioBuffer, report: MasterReport, meta?: ReleaseMeta): Promise<object | null> {
+  if (!sign) return null;
+  try {
+    const input = await passportInput({ name, data, format: fmt.id, sampleRate: buffer.sampleRate,
+      bitDepth: fmt.bitDepth ?? null, channels: buffer.numberOfChannels, durationSec: buffer.duration }, report, meta);
+    return await sign(input);
+  } catch (e) {
+    console.warn('[passport] not signed', e);
+    return null;
+  }
 }
 
 /** Resample a buffer to `targetRate` (browser OfflineAudioContext resampler). */
@@ -216,19 +235,20 @@ export async function encodeFormat(
   buffer: AudioBuffer,
   fmt: ExportFormat,
   dither: DitherMode,
+  meta?: ReleaseMeta,
 ): Promise<{ data: ArrayBuffer | Uint8Array; mime: string }> {
   if (fmt.kind === 'mp3') {
     const { encodeMp3 } = await import('@/lib/encoders/mp3');
-    return { data: encodeMp3(buffer, fmt.kbps ?? 320), mime: 'audio/mpeg' };
+    return { data: tagMp3(encodeMp3(buffer, fmt.kbps ?? 320), meta), mime: 'audio/mpeg' };
   }
   if (fmt.kind === 'flac') {
     const { encodeFlac } = await import('@/lib/encoders/flac');
-    return { data: await encodeFlac(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), mime: 'audio/flac' };
+    return { data: tagFlac(await encodeFlac(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), meta), mime: 'audio/flac' };
   }
   if (fmt.kind === 'aiff') {
-    return { data: encodeAiff(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), mime: 'audio/aiff' };
+    return { data: tagAiff(encodeAiff(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), meta), mime: 'audio/aiff' };
   }
-  return { data: encodeWav(buffer, fmt.bitDepth, dither), mime: 'audio/wav' };
+  return { data: tagWav(encodeWav(buffer, fmt.bitDepth, dither), meta), mime: 'audio/wav' };
 }
 
 /** Apply a static gain to a buffer (returns a new buffer). */
@@ -359,8 +379,8 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 export async function exportAudio(
   buffer: AudioBuffer,
   options: ExportOptions
-): Promise<{ blob: Blob; filename: string; report: MasterReport }> {
-  const { formats, filename, targetPeakDb, targetLufs, processing, dither = 'tpdf', onProgress } = options;
+): Promise<{ blob: Blob; filename: string; report: MasterReport; passport?: object | null }> {
+  const { formats, filename, targetPeakDb, targetLufs, processing, dither = 'tpdf', onProgress, meta, sign } = options;
   const baseName = filename.replace(/\.[^.]+$/, '');
 
   // Render through the full mastering chain + closed-loop loudness / true-peak matching
@@ -381,12 +401,14 @@ export async function exportAudio(
   if (ids.length === 1) {
     const fmt = FORMAT_MAP[ids[0]];
     onProgress?.(fmt.id, 0);
-    const { data, mime } = await encodeFormat(master, fmt, dither);
+    const { data, mime } = await encodeFormat(master, fmt, dither, meta);
     onProgress?.(fmt.id, 100);
+    const name = `${baseName}_master.${fmt.extension}`;
     return {
       blob: new Blob([data], { type: mime }),
-      filename: `${baseName}_master.${fmt.extension}`,
+      filename: name,
       report,
+      passport: await passportFor(sign, name, data, fmt, master, report, meta),
     };
   }
 
@@ -396,8 +418,11 @@ export async function exportAudio(
     const fmt = FORMAT_MAP[id];
     onProgress?.(fmt.id, 0);
     try {
-      const { data } = await encodeFormat(master, fmt, dither);
-      zip.file(`${baseName}_${fmt.suffix}.${fmt.extension}`, data);
+      const { data } = await encodeFormat(master, fmt, dither, meta);
+      const name = `${baseName}_${fmt.suffix}.${fmt.extension}`;
+      zip.file(name, data);
+      const pp = await passportFor(sign, name, data, fmt, master, report, meta);
+      if (pp) zip.file(`${name}.passport.json`, JSON.stringify(pp, null, 2));
     } catch (e) {
       console.error(`[export] ${fmt.id} failed, falling back to WAV`, e);
       zip.file(`${baseName}_${fmt.suffix}_FALLBACK.wav`, encodeWav(master, 24, dither));
@@ -444,9 +469,11 @@ export async function exportAllTargets(
     sampleRate?: number;
     dither?: DitherMode;
     onProgress?: (label: string, pct: number) => void;
+    meta?: ReleaseMeta;
+    sign?: PassportSigner;
   },
 ): Promise<{ blob: Blob; filename: string; reports: { name: string; report: MasterReport }[] }> {
-  const { targets, formatId, filename, processing, sampleRate, dither = 'shaped', onProgress } = options;
+  const { targets, formatId, filename, processing, sampleRate, dither = 'shaped', onProgress, meta, sign } = options;
   const baseName = filename.replace(/\.[^.]+$/, '');
   const fmt = FORMAT_MAP[formatId] || FORMAT_MAP.wav24;
   const zip = new JSZip();
@@ -465,8 +492,11 @@ export async function exportAllTargets(
     });
     const master = sampleRate ? await resampleBuffer(rendered, sampleRate) : rendered;
     try {
-      const { data } = await encodeFormat(master, fmt, dither);
-      zip.file(`${baseName}_${slug}.${fmt.extension}`, data);
+      const { data } = await encodeFormat(master, fmt, dither, meta);
+      const name = `${baseName}_${slug}.${fmt.extension}`;
+      zip.file(name, data);
+      const pp = await passportFor(sign, name, data, fmt, master, report, meta);
+      if (pp) zip.file(`${name}.passport.json`, JSON.stringify(pp, null, 2));
     } catch (e) {
       console.error(`[exportAllTargets] ${t.name} ${fmt.id} failed, WAV fallback`, e);
       zip.file(`${baseName}_${slug}_FALLBACK.wav`, encodeWav(master, 24, dither));

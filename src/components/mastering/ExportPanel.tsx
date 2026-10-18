@@ -6,6 +6,21 @@ import { useAudio } from '@/contexts/AudioContext';
 import { exportAudio, exportAllTargets, downloadBlob, type MasterReport } from '@/lib/audioExport';
 import { toast } from 'sonner';
 import { trackKeyOf, useExportGate } from '@/lib/exportGate';
+import { normaliseIsrc, type ReleaseMeta } from '@/lib/tags';
+import { useAuth } from '@/contexts/AuthContext';
+import { passportApi } from '@/lib/accountApi';
+import type { PassportSigner } from '@/lib/passport';
+
+const META_FIELDS: Array<{ key: keyof ReleaseMeta; label: string; placeholder: string }> = [
+  { key: 'title', label: 'Title', placeholder: 'Track title' },
+  { key: 'artist', label: 'Artist', placeholder: 'Artist' },
+  { key: 'album', label: 'Album', placeholder: 'Album / EP' },
+  { key: 'year', label: 'Year', placeholder: '2026' },
+  { key: 'genre', label: 'Genre', placeholder: 'Genre' },
+  { key: 'isrc', label: 'ISRC', placeholder: 'CC-XXX-YY-NNNNN' },
+];
+const ARTIST_KEY = 'mp-export-artist';
+const readArtist = () => { try { return localStorage.getItem(ARTIST_KEY) ?? ''; } catch { return ''; } };
 
 const FORMATS = [
   { id: 'wav24', label: 'WAV 24-bit', desc: 'Lossless master / distribution' },
@@ -39,6 +54,10 @@ const PLATFORMS = [
 const ExportPanel = () => {
   const { state, processing } = useAudio();
   const settleExport = useExportGate();
+  const { user } = useAuth();
+  const [passport, setPassport] = useState<{ data: object; name: string } | null>(null);
+  // signed master passports need an account; without one exports simply carry none
+  const signer: PassportSigner | undefined = user ? (input) => passportApi.sign(input).catch(() => null) : undefined;
   const exportTrack = () => state.file
     ? [{ key: trackKeyOf(state.file), label: state.fileInfo?.name }]
     : [{ key: `${state.fileInfo?.name}|${state.fileInfo?.duration}`, label: state.fileInfo?.name }];
@@ -48,6 +67,14 @@ const ExportPanel = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState('');
   const [report, setReport] = useState<MasterReport | null>(null);
+  const [meta, setMeta] = useState<ReleaseMeta>(() => ({ artist: readArtist() }));
+  const isrcBad = !!meta.isrc && !normaliseIsrc(meta.isrc);
+  // title defaults to the file name until the user types one
+  const metaOut = (): ReleaseMeta => ({ ...meta, title: meta.title || state.fileInfo?.name.replace(/\.[^.]+$/, '') });
+  const setField = (k: keyof ReleaseMeta, v: string) => {
+    setMeta((m) => ({ ...m, [k]: v }));
+    if (k === 'artist') { try { localStorage.setItem(ARTIST_KEY, v); } catch { /* private mode */ } }
+  };
 
   const toggleFormat = (id: string) => {
     setSelectedFormats(prev =>
@@ -69,6 +96,8 @@ const ExportPanel = () => {
         processing,
         dither: 'shaped',
         sampleRate: sampleRate || undefined,
+        meta: metaOut(),
+        sign: signer,
         onProgress: (label, pct) => setProgress(`${label}: ${pct}%`),
       });
       downloadBlob(result.blob, result.filename);
@@ -102,6 +131,8 @@ const ExportPanel = () => {
         processing,
         dither: 'shaped',
         sampleRate: sampleRate || undefined,
+        meta: metaOut(),
+        sign: signer,
         onProgress: (format, pct) => {
           setProgress(`${format}: ${pct}%`);
         },
@@ -109,6 +140,7 @@ const ExportPanel = () => {
 
       downloadBlob(result.blob, result.filename);
       setReport(result.report);
+      setPassport(result.passport ? { data: result.passport, name: `${result.filename}.passport.json` } : null);
       const r = result.report;
       toast.success(
         `Exported: ${result.filename} — ${r.integratedLufs.toFixed(1)} LUFS / ${r.truePeakDb.toFixed(1)} dBTP` +
@@ -197,18 +229,23 @@ const ExportPanel = () => {
 
         {/* Metadata */}
         <div className="space-y-2 flex-1 min-w-[200px]">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Metadata</span>
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Release info (written into the files)</span>
           <div className="grid grid-cols-2 gap-2">
-            {['Title', 'Artist', 'Album', 'Year', 'Genre', 'BPM'].map(field => (
-              <div key={field}>
-                <label className="text-[9px] uppercase text-muted-foreground">{field}</label>
+            {META_FIELDS.map(f => (
+              <div key={f.key}>
+                <label className="text-[9px] uppercase text-muted-foreground">{f.label}</label>
                 <input
-                  className="w-full mt-0.5 px-2 py-1 bg-background border border-border rounded-sm text-xs text-foreground focus:border-primary/50 focus:outline-none"
-                  placeholder={field}
+                  value={meta[f.key] ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                  className={`w-full mt-0.5 px-2 py-1 bg-background border rounded-sm text-xs text-foreground focus:outline-none ${
+                    f.key === 'isrc' && isrcBad ? 'border-destructive' : 'border-border focus:border-primary/50'
+                  }`}
+                  placeholder={f.key === 'title' ? state.fileInfo?.name.replace(/\.[^.]+$/, '') || f.placeholder : f.placeholder}
                 />
               </div>
             ))}
           </div>
+          {isrcBad && <p className="text-[9px] text-destructive">ISRC needs 12 characters: country (2 letters) · registrant (3) · year (2 digits) · 5 digits — it will be left out.</p>}
         </div>
       </div>
 
@@ -256,6 +293,15 @@ const ExportPanel = () => {
             </span>
           )}
           {report.note && <span className="w-full text-warning normal-case">{report.note}</span>}
+          {passport && (
+            <button
+              onClick={() => downloadBlob(new Blob([JSON.stringify(passport.data, null, 2)], { type: 'application/json' }), passport.name)}
+              className="underline text-primary"
+              title="Signed statement of the measured loudness and true peak of this exact file — check it at /verify"
+            >
+              Download master passport
+            </button>
+          )}
         </div>
       )}
     </div>

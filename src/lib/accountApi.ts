@@ -146,3 +146,19 @@ export const creditsApi = {
   chargeExport: (tracks: Array<{ key: string; label?: string }>) =>
     req<ExportCharge>('/api/credits/export', { method: 'POST', body: JSON.stringify({ tracks }) }),
 };
+
+export interface MasterPassport {
+  alg: 'Ed25519';
+  keyId: string;
+  payload: Record<string, unknown> & { sha256: string; issuedAt: string };
+  signature: string;
+}
+
+export const passportApi = {
+  sign: (input: Record<string, unknown>) => req<MasterPassport>('/api/passport/sign', { method: 'POST', body: JSON.stringify(input) }),
+  verify: (passport: unknown, sha256?: string) =>
+    req<{ valid: boolean; reason?: string; fileMatches?: boolean; issuedAt?: string; keyId?: string }>('/api/passport/verify', {
+      method: 'POST',
+      body: JSON.stringify({ passport, sha256 }),
+    }),
+};

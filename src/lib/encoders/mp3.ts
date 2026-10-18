@@ -37,7 +37,7 @@ function floatToInt16(f: Float32Array): Int16Array {
   const out = new Int16Array(f.length);
   for (let i = 0; i < f.length; i++) {
     const s = Math.max(-1, Math.min(1, f[i]));
-    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    out[i] = Math.round(s * 32767);   // round, never truncate (truncation = up to 1 LSB error + distortion)
   }
   return out;
 }
