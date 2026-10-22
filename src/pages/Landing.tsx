@@ -19,6 +19,7 @@ import {
 import SiteFooter from '@/components/site/SiteFooter';
 import { BrandMark, Wordmark } from '@/components/Brand';
 import { Seo } from '@/components/Seo';
+import HrlLangSwitch from '@/lib/hrl/HrlLangSwitch';
 
 const features = [
   {
@@ -128,6 +129,7 @@ const Landing = () => (
           >
             Jak to działa
           </a>
+          <HrlLangSwitch />
           <Button asChild size="sm">
             <Link to="/app">Otwórz konsolę</Link>
           </Button>

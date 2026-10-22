@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAudio } from '@/contexts/AudioContext';
 import { BrandMark, Wordmark } from '@/components/Brand';
 import ModeSelector from './ModeSelector';
+import HrlLangSwitch from '@/lib/hrl/HrlLangSwitch';
 
 const Header = () => {
   const { state } = useAudio();
@@ -37,6 +38,7 @@ const Header = () => {
               )}
             </div>
           )}
+          <HrlLangSwitch />
           <Link to="/album" className="hidden sm:inline text-[11px] font-mono uppercase tracking-wider text-primary hover:text-foreground" title="Master a whole album">Album mode</Link>
           <a
             href="https://hardbanrecordslab.online/"

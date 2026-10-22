@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import SiteFooter from '@/components/site/SiteFooter';
 import { BrandMark, Wordmark } from '@/components/Brand';
 import { Seo } from '@/components/Seo';
+import HrlLangSwitch from '@/lib/hrl/HrlLangSwitch';
 
 // Dokumenty prawne są wspólne dla całej platformy HardbanRecords Lab (jedno źródło na
 // hardbanrecordslab.online). Strony /legal/* MasteringPro to tylko skróty dla tej aplikacji.
@@ -52,12 +53,15 @@ const LegalLayout = ({ title, updated, intro, children }: LegalLayoutProps) => (
           <BrandMark className="w-8 h-8" />
           <Wordmark />
         </Link>
+        <div className="flex items-center gap-3">
+        <HrlLangSwitch />
         <Link
           to="/"
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-3.5 h-3.5" strokeWidth={1.5} /> Strona główna
         </Link>
+        </div>
       </div>
     </header>
 

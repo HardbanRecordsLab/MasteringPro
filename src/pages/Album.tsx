@@ -19,6 +19,7 @@ import {
 import { masterAlbum, type AlbumReport } from '@/lib/album/master';
 import { MAX_ALBUM_TRACKS, trackKeyOf, useExportGate } from '@/lib/exportGate';
 import { useAuth } from '@/contexts/AuthContext';
+import HrlLangSwitch from '@/lib/hrl/HrlLangSwitch';
 
 interface Item {
   id: string;
@@ -195,7 +196,7 @@ const Album = () => {
             <BrandMark className="w-7 h-7" /><Wordmark className="text-base sm:text-lg font-extrabold" />
           </Link>
           <div className="flex items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-primary"><Disc3 className="w-4 h-4" /> Album mode</div>
-          <Link to="/app" className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground">← Single-track console</Link>
+          <div className="flex items-center gap-3"><HrlLangSwitch /><Link to="/app" className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground">← Single-track console</Link></div>
         </div>
       </header>
 
