@@ -1357,8 +1357,8 @@ export const PAIRS: Array<[string, string]> = [
 "Write to legal@hardbanrecordslab.online. We will reply and tell you about the fix."
 ],
 [
-"Fix the problems (AI Fix)",
-"Napraw problemy (AI Fix)"
+"Napraw problemy (AI Fix)",
+"Fix the problems (AI Fix)"
 ],
 [
 "Zwęża boki w niskich częstotliwościach (EQ Mid/Side), aby bas poprawnie sumował się do mono.",
@@ -1911,5 +1911,221 @@ export const PAIRS: Array<[string, string]> = [
 [
 "3 utwory gratis, potem od $7.99 za utwór",
 "3 free tracks, then from $7.99 per track"
+],
+[
+"Funkcje",
+"Features"
+],
+[
+"Cennik",
+"Pricing"
+],
+[
+"bez studia.",
+"no studio."
+],
+[
+"MasteringPro analizuje Twój utwór zgodnie z normą BS.1770-4, buduje pełny łańcuch DSP i eksportuje master gotowy na Spotify, Apple Music czy klub — wszystko lokalnie, w jednej karcie przeglądarki.",
+"MasteringPro analyses your track according to BS.1770-4, builds a full DSP chain and exports a master ready for Spotify, Apple Music or the club — all locally, in a single browser tab."
+],
+[
+"Wrzuć utwór",
+"Upload a track"
+],
+[
+"WAV, MP3 lub FLAC — plik zostaje w Twojej przeglądarce.",
+"WAV, MP3 or FLAC — the file stays in your browser."
+],
+[
+"Analiza i AI",
+"Analysis and AI"
+],
+[
+"Silnik mierzy LUFS, True Peak, dynamikę i widmo, po czym proponuje łańcuch.",
+"The engine measures LUFS, True Peak, dynamics and spectrum, then proposes a chain."
+],
+[
+"Porównaj A/B",
+"Compare A/B"
+],
+[
+"Przełączasz przed/po w locie — wyrównane głośnościowo, więc słyszysz przetwarzanie, nie poziom.",
+"You switch before/after on the fly — loudness-matched, so you hear the processing, not the level."
+],
+[
+"Eksportuj",
+"Export"
+],
+[
+"Render offline w tym samym łańcuchu, jaki słyszysz — z kompensacją latencji i dopasowaniem do celu platformy.",
+"Offline render through the same chain you hear — with latency compensation and matching to the platform target."
+],
+[
+"Jedna usługa dla każdego — te same funkcje w każdym pakiecie, różni się tylko liczba utworów. Kredyty nie wygasają, nic się nie odnawia samo, a trzy pierwsze utwory są gratis (bez karty). Poprawki i inne formaty tego samego utworu przez 3 dni — bez opłaty.",
+"One service for everyone — the same features in every pack, only the number of tracks differs. Credits never expire, nothing renews by itself, and the first three tracks are free (no card). Revisions and other formats of the same track for 3 days — free of charge."
+],
+[
+"3 utwory",
+"3 tracks"
+],
+[
+"Produkt",
+"Product"
+],
+[
+"Dokumenty",
+"Documents"
+],
+[
+"Regulamin",
+"Terms of Service"
+],
+[
+"Podprocesorzy",
+"Subprocessors"
+],
+[
+"Kontakt",
+"Contact"
+],
+[
+"Tryb",
+"Mode"
+],
+[
+"Napraw problemy (AI Fix)",
+"Fix problems (AI Fix)"
+],
+[
+"Administrator",
+"Controller"
+],
+[
+"Nagrania",
+"Recordings"
+],
+[
+"Konto (e-mail, hasło w postaci skrótu, saldo kredytów, skróty identyfikujące opłacone utwory — liczone z nazwy, rozmiaru i daty pliku, nie z nagrania) jest potrzebne tylko do eksportu mastera i funkcji AI. Płatności obsługuje Stripe — danych karty nie otrzymujemy.",
+"The account (email, password stored as a hash, credit balance, hashes identifying paid tracks — computed from the name, size and date of the file, not from the recording) is needed only for exporting a master and the AI features. Payments are handled by Stripe — we do not receive card data."
+],
+[
+"Konsola masteringu działa w przeglądarce, a Twoje nagrania nie trafiają na nasz serwer. Do wyeksportowania mastera potrzebne jest konto i kredyty; nowe konto dostaje kilka kredytów na start. Asystent AI jest wliczony w cenę utworu.",
+"The mastering console runs in the browser and your recordings never reach our server. Exporting a master requires an account and credits; a new account gets a few credits to start. The AI assistant is included in the price of the track."
+],
+[
+"Kredyty",
+"Credits"
+],
+[
+"Kupujesz jednorazowy pakiet (1 utwór, 3 utwory, 10 utworów albo album). Bez abonamentu, bez automatycznego odnawiania, kredyty nie wygasają. Cenę i liczbę kredytów widzisz przed zakupem. Płacisz przez Stripe.",
+"You buy a one-off pack (1 track, 3 tracks, 10 tracks or an album). No subscription, no automatic renewal, credits do not expire. You see the price and the number of credits before purchase. You pay through Stripe."
+],
+[
+"Reklamacje",
+"Complaints"
+],
+[
+"Usuwanie",
+"Deletion"
+],
+[
+"Zabezpieczenia",
+"Security measures"
+],
+[
+"Wykaz",
+"List"
+],
+[
+"Dane",
+"Data"
+],
+[
+"Powiadomienia (F8)",
+"Notifications (F8)"
+],
+[
+"Powiadomienia alt+T",
+"Notifications alt+T"
+],
+[
+"MasteringPro — profesjonalny mastering audio z AI",
+"MasteringPro — Professional AI Audio Mastering"
+],
+[
+"MasteringPro to konsola masteringowa w przeglądarce: metering głośności BS.1770-4, pełny łańcuch DSP (EQ, kompresja multiband, mid/side, saturacja, limiter lookahead) oraz copilot AI do masteringu.",
+"MasteringPro is a browser-based mastering console: BS.1770-4 loudness metering, a full DSP chain (EQ, multiband compression, mid/side, saturation, lookahead limiting) and an AI mastering copilot."
+],
+[
+"MasteringPro — mastering audio z AI",
+"MasteringPro — AI Audio Mastering"
+],
+[
+"Studyjny mastering w jednej karcie przeglądarki: metering BS.1770-4, pełny profesjonalny łańcuch DSP i copilot AI.",
+"Studio-grade mastering in one browser tab: BS.1770-4 metering, a full pro DSP chain and an AI copilot."
+],
+[
+"Wgraj → AI → Eksport. Zero pokręteł.",
+"Upload → AI → Export. Zero knobs."
+],
+[
+"Upuść tutaj wszystkie utwory albumu",
+"Drop all the tracks of the album here"
+],
+[
+"WAV · AIFF · FLAC · MP3 — każdy plik jest odczytywany z własną częstotliwością próbkowania",
+"WAV · AIFF · FLAC · MP3 — each file is read at its own sample rate"
+],
+[
+"Tytuł",
+"Title"
+],
+[
+"Wykonawca",
+"Artist"
+],
+[
+"−16 LUFS · Apple Music / podcasty",
+"−16 LUFS · Apple Music / podcasts"
+],
+[
+"−14 LUFS · Spotify, YouTube, Tidal",
+"−14 LUFS · Spotify, YouTube, Tidal"
+],
+[
+"−12 LUFS · dynamiczny pop / rock",
+"−12 LUFS · dynamic pop / rock"
+],
+[
+"−11 LUFS · głośny streaming",
+"−11 LUFS · loud streaming"
+],
+[
+"−9 LUFS · klub / CD",
+"−9 LUFS · club / CD"
+],
+[
+"0 % = każdy utwór na poziomie docelowym · więcej = ballada może pozostać cichsza niż singiel",
+"0 % = every track on the target · higher = a ballad may stay quieter than the single"
+],
+[
+"Transparentny",
+"Transparent"
+],
+[
+"Dowolny",
+"Any"
+],
+[
+"Elektroniczna",
+"Electronic"
+],
+[
+"Akustyczna",
+"Acoustic"
+],
+[
+"Mówiony",
+"Spoken"
 ]
 ];
