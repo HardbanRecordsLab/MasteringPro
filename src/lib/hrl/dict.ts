@@ -2127,5 +2127,313 @@ export const PAIRS: Array<[string, string]> = [
 [
 "Mówiony",
 "Spoken"
+],
+[
+"Konto",
+"Account"
+],
+[
+"Atak",
+"Attack"
+],
+[
+"Zwolnienie",
+"Release"
+],
+[
+"Próg",
+"Threshold"
+],
+[
+"Wzmocnienie wyrównawcze",
+"Makeup"
+],
+[
+"Wejście",
+"Input"
+],
+[
+"Miks",
+"Mix"
+],
+[
+"Połączone",
+"Linked"
+],
+[
+"Kompresor",
+"Compressor"
+],
+[
+"Agresywny",
+"Aggressive"
+],
+[
+"Subtelny",
+"Subtle"
+],
+[
+"Standardowy",
+"Standard"
+],
+[
+"Intensywność",
+"Intensity"
+],
+[
+"Styl",
+"Style"
+],
+[
+"Ciepły",
+"Warm"
+],
+[
+"Wyrazisty",
+"Punchy"
+],
+[
+"Głośny",
+"Loud"
+],
+[
+"Wokal",
+"Vocal"
+],
+[
+"Archiwalny",
+"Archival"
+],
+[
+"Radio/TV",
+"Broadcast"
+],
+[
+"CD/Głośno",
+"CD/Loud"
+],
+[
+"-14 LUFS dla Spotify/YouTube",
+"-14 LUFS for Spotify/YouTube"
+],
+[
+"Ostrożny pułap, −14 LUFS, bez kary.",
+"Conservative ceiling, −14 LUFS, no penalty."
+],
+[
+"Wyrównany poziom, de-essing, cel −16 LUFS.",
+"Even level, de-essed, −16 LUFS target."
+],
+[
+"Bas",
+"Bass"
+],
+[
+"Przejrzystość",
+"Clarity"
+],
+[
+"Dynamika",
+"Dynamics"
+],
+[
+"Głośność",
+"Loudness"
+],
+[
+"Rozrzut głośności",
+"Loudness spread"
+],
+[
+"Korelacja",
+"Correlation"
+],
+[
+"Widmo",
+"Spectrum"
+],
+[
+"Mierniki",
+"Meters"
+],
+[
+"Copilot AI",
+"AI Copilot"
+],
+[
+"Presety",
+"Presets"
+],
+[
+"Restauracja",
+"Restoration"
+],
+[
+"Przebieg fali",
+"Waveform"
+],
+[
+"Odtwarzaj",
+"Play"
+],
+[
+"Przyciąganie",
+"Snap"
+],
+[
+"Zapisz bieżący łańcuch",
+"Save current chain"
+],
+[
+"Zapisz bieżący łańcuch do A",
+"Save current chain to A"
+],
+[
+"Zapisz bieżący łańcuch do B",
+"Save current chain to B"
+],
+[
+"Zapisz bieżący łańcuch do C",
+"Save current chain to C"
+],
+[
+"Zapisz bieżący łańcuch do D",
+"Save current chain to D"
+],
+[
+"Zapisz",
+"Save"
+],
+[
+"Usuń z listy",
+"Remove"
+],
+[
+"Przesuń w dół",
+"Move down"
+],
+[
+"Przesuń w górę",
+"Move up"
+],
+[
+"Zaproponuj kolejność",
+"Suggest order"
+],
+[
+"Płynny przebieg",
+"Smooth flow"
+],
+[
+"Narastający",
+"Rising"
+],
+[
+"Łuk dramaturgiczny",
+"Arc"
+],
+[
+"Tytuł utworu {}",
+"Title of track {}"
+],
+[
+"Odległość tonalna",
+"Tonal distance"
+],
+[
+"Barwa",
+"Tone"
+],
+[
+"Lista utworów ·",
+"Tracklist ·"
+],
+[
+"Utwory gotowe",
+"Tracks ready"
+],
+[
+"Koszt przejścia",
+"Transition cost"
+],
+[
+"Gatunek",
+"Genre"
+],
+[
+"Rok",
+"Year"
+],
+[
+"Źródło",
+"Source"
+],
+[
+"Cel:",
+"Target:"
+],
+[
+"Szerokość {}%",
+"Width {}%"
+],
+[
+"analizowanie…",
+"analysing…"
+],
+[
+"oczekiwanie…",
+"waiting…"
+],
+[
+"Dokup",
+"Buy more"
+],
+[
+"Ukryj",
+"Hide"
+],
+[
+"Dobry master — kilka poprawek podniesie go do jakości wydawniczej.",
+"Good master — a few tweaks would push it to release quality."
+],
+[
+"Zwiększa szerokość stereo do ok. 120%, zachowując bezpieczną korelację.",
+"Increases stereo width to ~120% while keeping correlation safe."
+],
+[
+"DR = TT Dynamic Range · PSR/PLR = szczyt a głośność krótkoterminowa / zintegrowana — poniżej ok. 6 oznacza silną kompresję.",
+"DR = TT Dynamic Range · PSR/PLR = peak vs short-term / integrated loudness — under ~6 means heavily compressed."
+],
+[
+"Renderuje bieżący łańcuch offline i mierzy głośność wg BS.1770-4, a następnie pokazuje, o ile każda platforma ściszy utwór.",
+"Renders your current chain offline and measures BS.1770-4 loudness, then shows how far each platform will turn the track down."
+],
+[
+"Koduje master do AAC, Opus i MP3 tak jak serwisy streamingowe, dekoduje go z powrotem i mierzy true peak po transkodowaniu — oraz ile z każdego pasma przetrwa na głośnikach mono.",
+"Encodes your master to AAC, Opus and MP3 the way streaming services do, decodes it again and measures the true peak after the transcode — plus how much of each band survives on mono speakers."
+],
+[
+"ta przeglądarka nie ma do tego kodera (Chrome / Edge mają)",
+"this browser has no encoder for it (Chrome / Edge do)"
+],
+[
+"MasteringPro to konsola masteringowa działająca w przeglądarce: pomiar głośności BS.1770-4, pełny łańcuch DSP (EQ, kompresja wielopasmowa, mid/side, saturacja, limiter z lookahead) i copilot AI do masteringu. Twój dźwięk nigdy nie opuszcza przeglądarki.",
+"MasteringPro is a browser-based mastering console: BS.1770-4 loudness metering, a full DSP chain (EQ, multiband compression, mid/side, saturation, lookahead limiting) and an AI mastering copilot. Your audio never leaves the browser."
+],
+[
+"Żądam dostarczenia kredytów (1 kredyt = 1 utwór) od razu po zapłacie i przyjmuję do wiadomości, że tracę wtedy prawo odstąpienia. Akceptuję",
+"I request delivery of the credits (1 credit = 1 track) immediately after payment and acknowledge that I then lose the right of withdrawal. I accept"
+],
+[
+"{} utwór do wyeksportowania",
+"{} track to export"
+],
+[
+"{} utwory do wyeksportowania",
+"{} tracks to export"
+],
+[
+"{} utworów do wyeksportowania",
+"{} tracks to export"
 ]
 ];

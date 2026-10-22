@@ -198,7 +198,7 @@ const AccountPanel = () => {
 
           <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-sm bg-primary/10">
             <span className="flex items-center gap-1 text-xs font-medium text-primary">
-              <Zap className="w-3 h-3" /> {user.credits} {user.credits === 1 ? 'utwór' : user.credits >= 2 && user.credits <= 4 ? 'utwory' : 'utworów'} do wyeksportowania
+              <Zap className="w-3 h-3" /> {`${user.credits} ${user.credits === 1 ? 'utwór' : user.credits >= 2 && user.credits <= 4 ? 'utwory' : 'utworów'} do wyeksportowania`}
             </span>
             <button onClick={openPacks} className="text-[10px] underline text-primary hover:text-primary/80">
               {showPacks ? 'Ukryj' : 'Dokup'}
