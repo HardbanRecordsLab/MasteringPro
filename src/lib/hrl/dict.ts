@@ -1922,7 +1922,7 @@ export const PAIRS: Array<[string, string]> = [
 ],
 [
 "bez studia.",
-"no studio."
+"without a studio."
 ],
 [
 "MasteringPro analizuje Twój utwór zgodnie z normą BS.1770-4, buduje pełny łańcuch DSP i eksportuje master gotowy na Spotify, Apple Music czy klub — wszystko lokalnie, w jednej karcie przeglądarki.",
