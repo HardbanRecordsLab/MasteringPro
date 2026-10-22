@@ -44,6 +44,9 @@ billingRoutes.get('/history', requireUser, async (c) => {
   });
 });
 
+// UI language shared across *.hardbanrecordslab.online (cookie hrl_lang), English by default.
+const requestLang = (c) => (/(?:^|;\s*)hrl_lang=pl/.test(c.req.header('cookie') || '') ? 'pl' : 'en');
+
 billingRoutes.post('/checkout', requireUser, async (c) => {
   if (!config.stripe.secretKey) {
     return c.json(
@@ -76,6 +79,7 @@ billingRoutes.post('/checkout', requireUser, async (c) => {
     'https://masteringpro.hardbanrecordslab.online/?billing=success&session_id={CHECKOUT_SESSION_ID}';
   const cancelUrl = config.stripe.cancelUrl || 'https://masteringpro.hardbanrecordslab.online/?billing=cancelled';
 
+  const lang = requestLang(c);
   try {
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
@@ -88,14 +92,16 @@ billingRoutes.post('/checkout', requireUser, async (c) => {
       metadata: { user_id: user.id, pack_id: pack.id, credits: String(pack.credits) },
       // same metadata on the payment itself, so a refund can be traced back to the user
       payment_intent_data: {
-        description: `MasteringPro — ${pack.credits} utworów`,
+        description: lang === 'pl' ? `MasteringPro — ${pack.credits} utworów` : `MasteringPro — ${pack.credits} credits`,
         metadata: { user_id: user.id, pack_id: pack.id, credits: String(pack.credits) },
       },
-      locale: 'auto',
+      locale: lang,
       custom_text: {
         submit: {
           message:
-            'Kupując, wyraźnie zgadzasz się na natychmiastowe dostarczenie kredytów (treść cyfrowa) i przyjmujesz do wiadomości, że po ich wykorzystaniu tracisz prawo odstąpienia od umowy. Kredyty nie wygasają.',
+            lang === 'pl'
+              ? 'Kupując, wyraźnie zgadzasz się na natychmiastowe dostarczenie kredytów (treść cyfrowa) i przyjmujesz do wiadomości, że po ich wykorzystaniu tracisz prawo odstąpienia od umowy. Kredyty nie wygasają.'
+              : 'By purchasing you expressly agree to immediate delivery of the credits (digital content) and acknowledge that once they are used you lose the right of withdrawal. Credits do not expire.',
         },
       },
     });
