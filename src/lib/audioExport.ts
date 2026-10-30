@@ -191,6 +191,8 @@ export const FORMAT_MAP: Record<string, ExportFormat> = {
   flac: { id: 'flac', kind: 'flac', bitDepth: 24, extension: 'flac', suffix: 'flac' },
   'mp3-320': { id: 'mp3-320', kind: 'mp3', bitDepth: 16, extension: 'mp3', kbps: 320, suffix: 'mp3-320' },
   'mp3-256': { id: 'mp3-256', kind: 'mp3', bitDepth: 16, extension: 'mp3', kbps: 256, suffix: 'mp3-256' },
+  'mp3-192': { id: 'mp3-192', kind: 'mp3', bitDepth: 16, extension: 'mp3', kbps: 192, suffix: 'mp3-192' },
+  'mp3-128': { id: 'mp3-128', kind: 'mp3', bitDepth: 16, extension: 'mp3', kbps: 128, suffix: 'mp3-128' },
 };
 
 export interface ExportOptions {
