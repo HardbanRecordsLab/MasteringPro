@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Wand2, Loader2, Undo2, Activity, Zap, AudioWaveform, VolumeX } from 'lucide-react';
+import { Wand2, Loader2, Undo2, Activity, Zap, AudioWaveform, VolumeX, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -13,9 +13,10 @@ const STAGE_LABEL: Record<string, string> = {
   declip: 'Reconstructing clipped peaks…',
   declick: 'Removing clicks…',
   denoise: 'Reducing noise…',
+  bandfill: 'Adding the missing top end…',
 };
 
-interface Toggles { hum: boolean; clip: boolean; clicks: boolean; noise: boolean }
+interface Toggles { hum: boolean; clip: boolean; clicks: boolean; noise: boolean; air: boolean }
 
 const Row = ({
   icon, title, detail, found, checked, onChange,
@@ -37,9 +38,10 @@ const RestorationPanel = () => {
   const [stage, setStage] = useState('');
   const [progress, setProgress] = useState(0);
   const [report, setReport] = useState<RestoreReport | null>(null);
-  const [on, setOn] = useState<Toggles>({ hum: false, clip: false, clicks: false, noise: false });
+  const [on, setOn] = useState<Toggles>({ hum: false, clip: false, clicks: false, noise: false, air: false });
   const [clickSens, setClickSens] = useState(5);
   const [noiseDb, setNoiseDb] = useState(12);
+  const [airPct, setAirPct] = useState(60);
 
   if (!state.audioBuffer) return null;
 
@@ -58,8 +60,9 @@ const RestorationPanel = () => {
         clip: !!d.clipping,
         clicks: clicksPerMin(d.clicks) >= MIN_CLICKS_PER_MIN,
         noise: !!d.noise && d.noise.confidence > 0.2 && d.noise.floorDb > -75,
+        air: false,                                  // experimental, a matter of taste: never switched on for the user
       });
-      const problems = [d.hum && 'hum', d.clipping && 'clipping', clicksPerMin(d.clicks) >= MIN_CLICKS_PER_MIN && 'clicks', d.noise && d.noise.floorDb > -75 && 'noise'].filter(Boolean);
+      const problems = [d.hum && 'hum', d.clipping && 'clipping', clicksPerMin(d.clicks) >= MIN_CLICKS_PER_MIN && 'clicks', d.noise && d.noise.floorDb > -75 && 'noise', d.bandLimit && `top end cut off at ${(d.bandLimit.cutoffHz / 1000).toFixed(1)} kHz`].filter(Boolean);
       toast[problems.length ? 'info' : 'success'](problems.length ? `Found: ${problems.join(', ')}` : 'No restoration issues found — the file is clean');
     } catch (e) {
       toast.error('Analysis failed');
@@ -80,6 +83,7 @@ const RestorationPanel = () => {
           declip: { enabled: on.clip },
           declick: { enabled: on.clicks, sensitivity: clickSens },
           denoise: { enabled: on.noise, reductionDb: noiseDb },
+          bandfill: { enabled: on.air, amount: airPct / 100, cutoffHz: diag?.bandLimit?.cutoffHz },
         },
         (st, f) => { setStage(STAGE_LABEL[st] ?? 'Restoring…'); setProgress(Math.round(f * 100)); },
       );
@@ -96,7 +100,7 @@ const RestorationPanel = () => {
     }
   };
 
-  const anyOn = on.hum || on.clip || on.clicks || on.noise;
+  const anyOn = on.hum || on.clip || on.clicks || on.noise || (on.air && !!diag?.bandLimit);
 
   return (
     <div className="panel p-3 space-y-3" data-tour="restoration">
@@ -119,6 +123,7 @@ const RestorationPanel = () => {
           {report.clip && <div>Clipping: {report.clip.runs} peaks rebuilt (ceiling {report.clip.ceilingDb.toFixed(1)} → up to {report.clip.rebuiltToDb.toFixed(1)} dB before trim)</div>}
           {report.clicks && <div>Clicks: {report.clicks.bursts} repaired ({report.clicks.samples} samples)</div>}
           {report.noise && <div>Noise floor: {report.noise.floorBeforeDb.toFixed(1)} → {report.noise.floorAfterDb.toFixed(1)} dBFS (−{report.noise.reducedDb.toFixed(1)} dB)</div>}
+          {report.bandfill && <div>Top end: noise-like air added from {(report.bandfill.cutoffHz / 1000).toFixed(1)} to {(report.bandfill.filledToHz / 1000).toFixed(1)} kHz at {Math.round(report.bandfill.amount * 100)} % (not recovered audio)</div>}
           {report.gainDb < -0.05 && <div>Level trim: {report.gainDb.toFixed(1)} dB (headroom after declip)</div>}
         </div>
       )}
@@ -154,6 +159,11 @@ const RestorationPanel = () => {
               detail={diag.noise ? `${diag.noise.floorDb.toFixed(1)} dBFS floor${diag.noise.confidence < 0.2 ? ' · uncertain' : ''}` : 'no quiet passage to learn from'}
               found={!!diag.noise && diag.noise.floorDb > -75} checked={on.noise} onChange={(v) => setOn((s) => ({ ...s, noise: v }))}
             />
+            <Row
+              icon={<Sparkles className="w-3.5 h-3.5" />} title="Missing top end (experimental)"
+              detail={diag.bandLimit ? `cut off at ${(diag.bandLimit.cutoffHz / 1000).toFixed(1)} kHz, empty above · typical of MP3 / AI origin` : 'no cut-off found'}
+              found={!!diag.bandLimit} checked={on.air && !!diag.bandLimit} onChange={(v) => setOn((s) => ({ ...s, air: v && !!diag.bandLimit }))}
+            />
           </div>
 
           {on.clicks && (
@@ -170,6 +180,18 @@ const RestorationPanel = () => {
                 <span>Noise reduction</span><span className="text-primary font-mono">{noiseDb} dB</span>
               </div>
               <Slider value={[noiseDb]} min={3} max={24} step={1} onValueChange={(v) => setNoiseDb(v[0])} />
+            </div>
+          )}
+
+          {on.air && diag.bandLimit && (
+            <div className="space-y-1">
+              <div className="flex justify-between text-[9px] uppercase tracking-[0.16em] text-muted-foreground">
+                <span>Top-end fill</span><span className="text-primary font-mono">{airPct} %</span>
+              </div>
+              <Slider value={[airPct]} min={20} max={100} step={5} onValueChange={(v) => setAirPct(v[0])} />
+              <div className="text-[9px] text-muted-foreground leading-snug">
+                Adds noise-like air above the cut-off that follows the level just below it. The lost audio is not recovered; judge by ear, and revert if it does not help.
+              </div>
             </div>
           )}
 

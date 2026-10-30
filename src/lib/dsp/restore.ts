@@ -9,6 +9,7 @@ import { detectHum, dehum, type HumDetection } from '@/lib/dsp/dehum';
 import { detectClipping, declip, type ClipDetection } from '@/lib/dsp/declip';
 import { countClicks, declick } from '@/lib/dsp/declick';
 import { denoise, estimateNoiseProfile } from '@/lib/dsp/denoise';
+import { detectBandLimit, fillBand, type BandLimit, type FillReport } from '@/lib/dsp/bandfill';
 
 export interface Diagnosis {
   hum: HumDetection | null;
@@ -16,6 +17,8 @@ export interface Diagnosis {
   /** estimated number of click bursts (summed over channels) */
   clicks: number;
   noise: { floorDb: number; confidence: number } | null;
+  /** a steep cutoff with nothing above it (lossy origin), or null */
+  bandLimit: BandLimit | null;
   /** sample peak, dBFS */
   peakDb: number;
 }
@@ -25,6 +28,8 @@ export interface RestoreOptions {
   declip?: { enabled: boolean };
   declick?: { enabled: boolean; sensitivity?: number };
   denoise?: { enabled: boolean; reductionDb?: number; sensitivity?: number; smoothing?: number };
+  /** EXPERIMENTAL: noise-like top end above a detected cutoff (see dsp/bandfill.ts); does nothing when no cutoff is found */
+  bandfill?: { enabled: boolean; amount?: number; cutoffHz?: number };
   /** after declipping the peaks exceed full scale: scale the result so its peak sits at this dBFS. Default −0.3. */
   peakTargetDb?: number;
 }
@@ -34,6 +39,7 @@ export interface RestoreReport {
   clip: { runs: number; samples: number; ceilingDb: number; rebuiltToDb: number } | null;
   clicks: { bursts: number; samples: number } | null;
   noise: { reducedDb: number; floorBeforeDb: number; floorAfterDb: number } | null;
+  bandfill: FillReport | null;
   /** gain applied at the end to keep the restored peaks below full scale (dB, ≤ 0) */
   gainDb: number;
 }
@@ -59,7 +65,7 @@ export function diagnose(channels: Float32Array[], sampleRate: number, onProgres
     if (np && (!noise || np.floorDb > noise.floorDb)) noise = { floorDb: np.floorDb, confidence: np.confidence };
     onProgress?.((c + 1) / channels.length);
   });
-  return { hum, clipping, clicks, noise, peakDb: toDb(peak) };
+  return { hum, clipping, clicks, noise, bandLimit: detectBandLimit(channels, sampleRate), peakDb: toDb(peak) };
 }
 
 /** Restore the channels. Input arrays are not modified; new arrays are returned. */
@@ -70,12 +76,13 @@ export function restoreChannels(
   onProgress?: (stage: string, fraction: number) => void,
 ): { channels: Float32Array[]; report: RestoreReport } {
   const chans = input.map((c) => Float32Array.from(c));
-  const report: RestoreReport = { hum: null, clip: null, clicks: null, noise: null, gainDb: 0 };
+  const report: RestoreReport = { hum: null, clip: null, clicks: null, noise: null, bandfill: null, gainDb: 0 };
   const stages: string[] = [];
   if (opts.declip?.enabled) stages.push('declip');
   if (opts.declick?.enabled) stages.push('declick');
   if (opts.dehum?.enabled) stages.push('hum');
   if (opts.denoise?.enabled) stages.push('denoise');
+  if (opts.bandfill?.enabled) stages.push('bandfill');
   const total = Math.max(1, stages.length * chans.length);
   let done = 0;
   const tick = (stage: string, f = 1) => onProgress?.(stage, Math.min(1, (done + f) / total));
@@ -128,6 +135,21 @@ export function restoreChannels(
       done++; tick('denoise', 0);
     });
     if (counted) report.noise = { reducedDb: reduced / counted, floorBeforeDb: before, floorAfterDb: after };
+  }
+
+  // last of the repairs: the fill is added on top of the cleaned signal, and the noise estimator above never sees it
+  if (opts.bandfill?.enabled) {
+    const limit = detectBandLimit(chans, sampleRate);
+    const cutoffHz = opts.bandfill.cutoffHz ?? limit?.cutoffHz;
+    if (cutoffHz) {
+      const slope = limit?.slopeDbPerOct;
+      chans.forEach((c, i) => {
+        const res = fillBand(c, sampleRate, { cutoffHz, slopeDbPerOct: slope, amount: opts.bandfill?.amount, seed: 1 + 7919 * i });
+        chans[i] = res.output;
+        report.bandfill = res.report;
+        done++; tick('bandfill', 0);
+      });
+    }
   }
 
   // keep the (possibly grown) peaks inside full scale
