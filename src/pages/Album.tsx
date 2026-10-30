@@ -13,10 +13,11 @@ import { downloadBlob } from '@/lib/audioExport';
 import { analyzeMusicalContent } from '@/lib/musicAnalysis';
 import { profileAudio } from '@/lib/profileClient';
 import {
-  DEFAULT_ALBUM_SETTINGS, brightnessOct, planTrack, sequenceCost, suggestOrder,
+  DEFAULT_ALBUM_SETTINGS, brightnessOct, planTrack, sanitizeFileName, sequenceCost, suggestOrder,
   type AlbumSettings, type AlbumTrack, type OrderMode,
 } from '@/lib/album/plan';
-import { masterAlbum, type AlbumReport } from '@/lib/album/master';
+import { cueBlob, masterAlbum, precheckCd, type AlbumCdResult, type AlbumReport } from '@/lib/album/master';
+import { normaliseIsrc, normaliseUpc } from '@/lib/cdMaster';
 import { MAX_ALBUM_TRACKS, trackKeyOf, useExportGate } from '@/lib/exportGate';
 import { useAuth } from '@/contexts/AuthContext';
 import HrlLangSwitch from '@/lib/hrl/HrlLangSwitch';
@@ -29,6 +30,7 @@ interface Item {
   info?: AlbumTrack;
   error?: string;
   gapBeforeSec: number;
+  isrc: string;
 }
 
 const fmtTime = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
@@ -59,7 +61,9 @@ const Album = () => {
   const [performer, setPerformer] = useState('Artist');
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ i: number; label: string; pct: number } | null>(null);
-  const [result, setResult] = useState<{ blob: Blob; report: AlbumReport } | null>(null);
+  const [result, setResult] = useState<{ blob: Blob; report: AlbumReport; cd?: AlbumCdResult } | null>(null);
+  const [cdOn, setCdOn] = useState(false);
+  const [upc, setUpc] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const settleExport = useExportGate();
   const { user, enabled: accountsOn } = useAuth();
@@ -105,7 +109,7 @@ const Album = () => {
       return [
       ...cur,
       ...list.slice(0, room).map((file) => ({
-        id: crypto.randomUUID(), file, name: file.name.replace(/\.[^.]+$/, ''), status: 'queued' as const, gapBeforeSec: gapSec,
+        id: crypto.randomUUID(), file, name: file.name.replace(/\.[^.]+$/, ''), status: 'queued' as const, gapBeforeSec: gapSec, isrc: '',
       })),
       ];
     });
@@ -148,6 +152,19 @@ const Album = () => {
 
   const run = async () => {
     if (!ready.length || busy) return;
+    const jobTracks = ready.map((it, i) => ({
+      info: { ...it.info!, name: it.name },
+      file: it.file,
+      gapBeforeSec: it.gapBeforeSec,
+      fadeInMs: i === 0 ? 40 : 10,
+      fadeOutMs: i === ready.length - 1 ? 3000 : 30,
+      isrc: it.isrc,
+    }));
+    const cdJob = cdOn ? { upc: upc.trim() || undefined, fileBase: sanitizeFileName(title) || 'disc' } : undefined;
+    if (cdJob) {
+      const pre = precheckCd(jobTracks, cdJob);
+      if (pre.errors.length) { pre.errors.slice(0, 4).forEach((m) => toast.error(m, { duration: 9000 })); return; }
+    }
     if (accountsOn && user && !window.confirm(
       `Wyeksportować ${ready.length} utworów? Pobierze do ${ready.length} kredytów (masz ${user.credits}). Utwory opłacone w ciągu ostatnich 3 dni są bezpłatne.`,
     )) return;
@@ -158,27 +175,22 @@ const Album = () => {
     setBusy(true);
     setResult(null);
     try {
-      const { zip, report } = await masterAlbum({
-        tracks: ready.map((it, i) => ({
-          info: { ...it.info!, name: it.name },
-          file: it.file,
-          gapBeforeSec: it.gapBeforeSec,
-          fadeInMs: i === 0 ? 40 : 10,
-          fadeOutMs: i === ready.length - 1 ? 3000 : 30,
-        })),
+      const { zip, report, cd } = await masterAlbum({
+        tracks: jobTracks,
         settings,
         baseChain,
         formatId,
         dither: 'tpdf',
         targetPeakDb: -1,
         album: { title, performer },
+        cd: cdJob,
         onProgress: (i, lbl, pct) => setProgress({ i, label: lbl, pct }),
         signal: abortRef.current.signal,
       });
-      setResult({ blob: zip, report });
-      toast.success('Album mastered');
+      setResult({ blob: zip, report, cd });
+      toast.success(cd ? 'Album and CD master ready' : 'Album mastered');
     } catch (e) {
-      if ((e as Error).name !== 'AbortError') { toast.error('Album mastering failed'); console.error(e); }
+      if ((e as Error).name !== 'AbortError') { toast.error((e as Error).message.startsWith('CD master') ? (e as Error).message : 'Album mastering failed'); console.error(e); }
     } finally {
       setBusy(false);
       setProgress(null);
@@ -244,6 +256,11 @@ const Album = () => {
                             {` · tone ${brightnessOct(it.info.profile) >= 0 ? '+' : ''}${brightnessOct(it.info.profile).toFixed(1)} oct`}
                           </div>
                         )}
+                        {cdOn && (
+                          <input value={it.isrc} placeholder="ISRC (CC-XXX-YY-NNNNN)" maxLength={15}
+                            onChange={(e) => setItems((c) => c.map((x) => (x.id === it.id ? { ...x, isrc: e.target.value.toUpperCase() } : x)))}
+                            className={`${field} w-full mt-1 font-mono ${it.isrc && !normaliseIsrc(it.isrc) ? 'border-destructive' : ''}`} aria-label={`ISRC of track ${idx + 1}`} />
+                        )}
                         {it.status === 'analysing' && <div className="text-[9px] font-mono text-primary mt-0.5 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> analysing…</div>}
                         {it.status === 'queued' && <div className="text-[9px] font-mono text-muted-foreground mt-0.5">waiting…</div>}
                         {it.status === 'error' && <div className="text-[9px] font-mono text-destructive mt-0.5">{it.error}</div>}
@@ -297,6 +314,22 @@ const Album = () => {
                 <div className="text-[10px] font-mono text-muted-foreground">
                   Spread {result.report.spreadBefore} → {result.report.spreadAfter} LU · tonal distance {result.report.toneBeforeMean} → {result.report.toneAfterMean} dB · ZIP contains the tracks, album.cue (pregaps) and the report
                 </div>
+                {result.cd && (
+                  <div className="p-2 bg-background rounded-sm border border-border space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={label}>CD master · {Math.floor(result.cd.totalSeconds / 60)}:{String(Math.floor(result.cd.totalSeconds % 60)).padStart(2, '0')} · Red Book 16-bit / 44.1 kHz</span>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => downloadBlob(result.cd!.bin, result.cd!.binName)}><Download className="w-3.5 h-3.5" /> {result.cd.binName}</Button>
+                        <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => downloadBlob(cueBlob(result.cd!.cue), result.cd!.cueName)}><Download className="w-3.5 h-3.5" /> {result.cd.cueName}</Button>
+                        <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => downloadBlob(new Blob([result.cd!.pq], { type: 'text/plain' }), 'PQ_LIST.txt')}><Download className="w-3.5 h-3.5" /> PQ list</Button>
+                      </div>
+                    </div>
+                    <div className="text-[9px] text-muted-foreground leading-relaxed">
+                      Keep the .bin and .cue side by side (same name) and burn or send them together. This is a BIN/CUE image with ISRC, UPC and CD-TEXT, <b>not a DDP set</b>: ask the plant whether it accepts it.
+                    </div>
+                    {result.cd.warnings.map((w) => <div key={w} className="text-[9px] font-mono text-destructive">⚠ {w}</div>)}
+                  </div>
+                )}
                 <div className="overflow-x-auto">
                   <table className="w-full text-[10px] font-mono">
                     <thead className="text-muted-foreground"><tr><th className="text-left py-1">Track</th><th>Before</th><th>After</th><th>Target</th><th>True peak</th><th>Tone Δ</th></tr></thead>
@@ -378,6 +411,22 @@ const Album = () => {
             </div>
 
             <div className="panel p-3 space-y-2">
+              <label className="flex items-center gap-2 text-xs text-foreground cursor-pointer">
+                <input type="checkbox" checked={cdOn} disabled={busy} onChange={(e) => { setCdOn(e.target.checked); setResult(null); }} />
+                Also build a CD master (BIN + CUE)
+              </label>
+              {cdOn && (
+                <div className="space-y-1.5">
+                  <label className="block space-y-1">
+                    <span className={label}>UPC / EAN of the release (optional)</span>
+                    <input value={upc} onChange={(e) => setUpc(e.target.value)} placeholder="12 or 13 digits" inputMode="numeric"
+                      className={`${field} w-full font-mono ${upc.trim() && !normaliseUpc(upc) ? 'border-destructive' : ''}`} />
+                  </label>
+                  <p className="text-[9px] text-muted-foreground leading-relaxed">
+                    A Red Book image: 16-bit, 44.1 kHz, tracks on sector boundaries, gaps stored as INDEX 00 silence. Enter each track's ISRC under its title. Max 99 tracks, 79:57 in total, each track at least 4 s.
+                  </p>
+                </div>
+              )}
               <Button className="w-full gap-2" disabled={busy || ready.length === 0 || analysing} onClick={run}>
                 {busy ? <><Loader2 className="w-4 h-4 animate-spin" /> Mastering…</> : <><Wand2 className="w-4 h-4" /> Master the album</>}
               </Button>

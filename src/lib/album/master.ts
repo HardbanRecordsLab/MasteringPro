@@ -8,8 +8,13 @@
 import JSZip from 'jszip';
 import type { ProcessingParams } from '@/contexts/AudioContext';
 import { decodeNative } from '@/lib/audioDecode';
-import { FORMAT_MAP, encodeFormat, renderMaster, type DitherMode } from '@/lib/audioExport';
+import { FORMAT_MAP, encodeFormat, renderMaster, resampleBuffer, type DitherMode } from '@/lib/audioExport';
+import { applyGain } from '@/lib/gain';
 import { measureIntegratedLoudness, measureTruePeak } from '@/lib/loudness';
+import {
+  SAMPLE_RATE as CD_RATE, binParts, buildCueSheet, checkPlan, latin1, layoutDisc, pcmFromChannels, pqList, validateDisc,
+  type CdTrackIn,
+} from '@/lib/cdMaster';
 import {
   applyFadesToChannel, buildCue, planTrack, sanitizeFileName, sequenceCost,
   type AlbumSettings, type AlbumTrack, type TrackPlan,
@@ -22,6 +27,28 @@ export interface AlbumJobTrack {
   gapBeforeSec: number;
   fadeInMs: number;
   fadeOutMs: number;
+  /** CD master only */
+  isrc?: string;
+  songwriter?: string;
+}
+
+/** Ask for a CD master (BIN + CUE) next to the files. Always 16-bit 44.1 kHz, whatever format the files use. */
+export interface AlbumCdJob {
+  /** UPC-A / EAN-13 of the release */
+  upc?: string;
+  /** base name of disc.bin / disc.cue */
+  fileBase: string;
+}
+
+export interface AlbumCdResult {
+  bin: Blob;
+  binName: string;
+  cue: string;
+  cueName: string;
+  /** the track table (starts, ISRC, peak) as text */
+  pq: string;
+  totalSeconds: number;
+  warnings: string[];
 }
 
 export interface AlbumJob {
@@ -32,6 +59,7 @@ export interface AlbumJob {
   dither: DitherMode;
   targetPeakDb: number;
   album: { title: string; performer: string; year?: string; genre?: string };
+  cd?: AlbumCdJob;
   onProgress?: (trackIndex: number, label: string, pct: number) => void;
   signal?: AbortSignal;
 }
@@ -87,8 +115,26 @@ export function formatAlbumReport(r: AlbumReport, album: { title: string; perfor
   return L.join('\r\n') + '\r\n';
 }
 
-export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: AlbumReport }> {
+/** What is wrong with a CD master request, known from the analysis alone, so nothing is rendered (or paid for) in vain. */
+export function precheckCd(tracks: AlbumJobTrack[], cd: AlbumCdJob) {
+  return checkPlan(cd.upc, tracks.map((t) => ({ title: t.info.name, isrc: t.isrc, gapBeforeSec: t.gapBeforeSec, seconds: t.info.durationSec })));
+}
+
+/** Resampled to 44.1 kHz the master may overshoot its ceiling between samples: take that off before the 16-bit conversion. */
+async function toCdPcm(finished: AudioBuffer, ceilingDb: number, dither: DitherMode): Promise<Int16Array> {
+  let buf = await resampleBuffer(finished, CD_RATE);
+  const tp = measureTruePeak(buf).truePeak;
+  if (tp > ceilingDb) buf = applyGain(buf, Math.pow(10, (ceilingDb - tp) / 20));
+  return pcmFromChannels(Array.from({ length: buf.numberOfChannels }, (_, c) => buf.getChannelData(c)), dither);
+}
+
+export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: AlbumReport; cd?: AlbumCdResult }> {
   const { tracks, settings, baseChain, formatId, dither, targetPeakDb, album, onProgress, signal } = job;
+  if (job.cd) {
+    const pre = precheckCd(tracks, job.cd);
+    if (pre.errors.length) throw new Error(`CD master: ${pre.errors.join(' ')}`);
+  }
+  const cdTracks: CdTrackIn[] = [];
   const fmt = FORMAT_MAP[formatId] ?? FORMAT_MAP.wav24;
   const infos = tracks.map((t) => t.info);
   const zip = new JSZip();
@@ -117,6 +163,14 @@ export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: A
       onProgress: (label, pct) => onProgress?.(i, label, pct),
     });
     const finished = withFades(rendered, jt.fadeInMs, jt.fadeOutMs);
+
+    if (job.cd) {
+      onProgress?.(i, 'CD master', 92);
+      cdTracks.push({
+        title: jt.info.name, performer: album.performer, songwriter: jt.songwriter, isrc: jt.isrc,
+        gapBeforeSec: i === 0 ? 0 : jt.gapBeforeSec, pcm: await toCdPcm(finished, targetPeakDb, dither),
+      });
+    }
 
     onProgress?.(i, 'Encoding', 95);
     const { data, check } = await encodeFormat(finished, fmt, dither, {
@@ -163,5 +217,17 @@ export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: A
   zip.file('album-report.json', JSON.stringify({ album, settings, format: fmt.id, report }, null, 2));
 
   const blob = await zip.generateAsync({ type: 'blob' });
-  return { zip: blob, report };
+  if (!job.cd) return { zip: blob, report };
+
+  const disc = { title: album.title, performer: album.performer, upc: job.cd.upc, tracks: cdTracks };
+  const check = validateDisc(disc);
+  if (check.errors.length) throw new Error(`CD master: ${check.errors.join(' ')}`);
+  const layout = layoutDisc(disc);
+  const binName = `${job.cd.fileBase}.bin`;
+  const cueName = `${job.cd.fileBase}.cue`;
+  const bin = new Blob(binParts(disc, layout) as BlobPart[], { type: 'application/octet-stream' });
+  const cue = buildCueSheet(disc, layout, binName);
+  return { zip: blob, report, cd: { bin, binName, cue, cueName, pq: pqList(disc, layout), totalSeconds: check.totalSeconds, warnings: check.warnings } };
 }
+
+export const cueBlob = (cue: string) => new Blob([latin1(cue) as BlobPart], { type: 'application/x-cue' });

@@ -7,6 +7,7 @@ import { renderProcessed } from '@/lib/offlineRender';
 import { measureIntegratedLoudness, measureTruePeak } from '@/lib/loudness';
 import { applyGain } from '@/lib/gain';
 import { codecProofMaster, type CodecProof } from '@/lib/codecProof';
+import { resampleChannels } from '@/lib/resample';
 
 /** Outcome of a loudness-matched render — surfaced to the UI. */
 export interface MasterReport {
@@ -228,16 +229,17 @@ async function passportFor(sign: PassportSigner | undefined, name: string, data:
   }
 }
 
-/** Resample a buffer to `targetRate` (browser OfflineAudioContext resampler). */
+/**
+ * Resample a buffer to `targetRate` with a windowed-sinc filter (src/lib/resample.ts). The browser's own OfflineAudioContext resampler is
+ * linear interpolation: it rolls the top octave off (−5 dB at 20 kHz for 48 → 44.1 kHz) and folds ultrasonic content into the audible band.
+ */
 export async function resampleBuffer(buffer: AudioBuffer, targetRate: number): Promise<AudioBuffer> {
   if (Math.abs(buffer.sampleRate - targetRate) < 1) return buffer;
-  const frames = Math.max(1, Math.ceil((buffer.length / buffer.sampleRate) * targetRate));
-  const ctx = new OfflineAudioContext(buffer.numberOfChannels, frames, targetRate);
-  const src = ctx.createBufferSource();
-  src.buffer = buffer;
-  src.connect(ctx.destination);
-  src.start(0);
-  return ctx.startRendering();
+  const channels = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
+  const out = await resampleChannels(channels, buffer.sampleRate, targetRate);
+  const result = new AudioBuffer({ numberOfChannels: out.length, length: out[0].length, sampleRate: targetRate });
+  out.forEach((data, c) => result.copyToChannel(data, c));
+  return result;
 }
 
 /** Outcome of {@link encodeWithinCeiling}. */
