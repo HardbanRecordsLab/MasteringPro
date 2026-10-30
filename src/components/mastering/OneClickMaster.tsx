@@ -6,7 +6,8 @@ import { useAudio, type ProcessingParams } from '@/contexts/AudioContext';
 import { analyzeAudio } from '@/lib/audioAnalysis';
 import { aiConfigToParams } from '@/lib/aiConfigMap';
 import { invokeAI } from '@/lib/aiApi';
-import { encodeWav, downloadBlob, renderMaster } from '@/lib/audioExport';
+import { encodeWav, downloadBlob, renderMaster, reportCodecProof } from '@/lib/audioExport';
+import { codecProofMaster } from '@/lib/codecProof';
 import { saveLastAISettings } from '@/lib/aiMasteringPresets';
 import { toast } from 'sonner';
 import { trackKeyOf, useExportGate } from '@/lib/exportGate';
@@ -176,6 +177,13 @@ const OneClickMaster = () => {
 
       setStage('encode');
       await new Promise(r => setTimeout(r, 30));
+      // a WAV that is clean here can still clip after the streaming service's MP3 / AAC / Opus transcode
+      try {
+        const proof = await codecProofMaster(rendered, plat.peak);
+        if (proof.worst) { rendered = proof.buffer; report = reportCodecProof(report, proof); }
+      } catch (e) {
+        console.warn('[OneClick] codec check skipped', e);
+      }
       const wav = encodeWav(rendered, 24);
       bumpTo('encode');
 

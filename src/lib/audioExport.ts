@@ -5,6 +5,8 @@ import JSZip from 'jszip';
 import type { ProcessingParams } from '@/contexts/AudioContext';
 import { renderProcessed } from '@/lib/offlineRender';
 import { measureIntegratedLoudness, measureTruePeak } from '@/lib/loudness';
+import { applyGain } from '@/lib/gain';
+import { codecProofMaster, type CodecProof } from '@/lib/codecProof';
 
 /** Outcome of a loudness-matched render — surfaced to the UI. */
 export interface MasterReport {
@@ -20,7 +22,9 @@ export interface MasterReport {
   /** set when the chain could not reach the target (loudness-saturated). */
   note?: string;
   /** Lossy formats only: what the DECODED file measures after the encode-and-check loop (see {@link encodeWithinCeiling}). */
-  encoded?: { format: string; truePeakDb: number; trimDb: number; verified: boolean };
+  encoded?: { format: string; truePeakDb: number; trimDb: number; verified: boolean };  /** Codec-proof pass: the highest true peak after MP3 / AAC / Opus (estimated on the loudest passages) and what it cost in level. */
+  codecProof?: { ceilingDb: number; trimDb: number; verified: boolean; worst: { id: string; label: string; truePeakDb: number } | null;
+    codecs: Array<{ id: string; label: string; truePeakDb: number | null }> };
 }
 
 /**
@@ -205,6 +209,8 @@ export interface ExportOptions {
   meta?: ReleaseMeta;
   /** Signs a master passport per exported file (needs an account); null = skip. */
   sign?: PassportSigner;
+  /** Take off whatever level it takes so the master stays under the ceiling after MP3 / AAC / Opus transcodes. */
+  codecProof?: boolean;
 }
 
 async function passportFor(sign: PassportSigner | undefined, name: string, data: ArrayBuffer | Uint8Array, fmt: ExportFormat,
@@ -304,6 +310,22 @@ export function reportEncoded(report: MasterReport, fmt: ExportFormat, check: Ce
   };
 }
 
+/** Fold a codec-proof pass into the report: the master got quieter by the trim, and the numbers say why. */
+export function reportCodecProof(report: MasterReport, proof: CodecProof): MasterReport {
+  if (!proof.worst) return report;                                   // no codec could run here: nothing was checked, nothing changes
+  const r1 = (x: number) => Math.round(x * 10) / 10;
+  const lufs = report.integratedLufs - proof.trimDb;
+  const trimmed = proof.trimDb > 0.005 ? `Codec-proof: ${proof.trimDb.toFixed(2)} dB taken off so ${proof.worst.label} stays under ${proof.ceilingDb.toFixed(1)} dBTP.` : '';
+  return {
+    ...report,
+    integratedLufs: r1(lufs),
+    truePeakDb: r1(report.truePeakDb - proof.trimDb),
+    onTarget: report.targetLufs === null ? report.onTarget : Math.abs(lufs - report.targetLufs) <= 0.3,
+    note: [report.note, trimmed].filter(Boolean).join(' ') || undefined,
+    codecProof: { ceilingDb: proof.ceilingDb, trimDb: Math.round(proof.trimDb * 100) / 100, verified: proof.verified, worst: proof.worst, codecs: proof.codecs },
+  };
+}
+
 /** Encode one rendered buffer to the requested container. With `ceilingDb`, an MP3 is checked after encoding (see {@link encodeWithinCeiling}). */
 export async function encodeFormat(
   buffer: AudioBuffer,
@@ -327,25 +349,6 @@ export async function encodeFormat(
     return { data: tagAiff(encodeAiff(buffer, fmt.bitDepth === 16 ? 16 : 24, dither), meta), mime: 'audio/aiff' };
   }
   return { data: tagWav(encodeWav(buffer, fmt.bitDepth, dither), meta), mime: 'audio/wav' };
-}
-
-/** Apply a static gain to a buffer (returns a new buffer). */
-function applyGain(buffer: AudioBuffer, gain: number): AudioBuffer {
-  if (gain === 1) return buffer;
-  const out = new AudioBuffer({
-    numberOfChannels: buffer.numberOfChannels,
-    length: buffer.length,
-    sampleRate: buffer.sampleRate,
-  });
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const src = buffer.getChannelData(c);
-    const dst = out.getChannelData(c);
-    for (let i = 0; i < src.length; i++) {
-      const v = src[i] * gain;
-      dst[i] = v > 1 ? 1 : v < -1 ? -1 : v;
-    }
-  }
-  return out;
 }
 
 /**
@@ -458,20 +461,29 @@ export async function exportAudio(
   buffer: AudioBuffer,
   options: ExportOptions
 ): Promise<{ blob: Blob; filename: string; report: MasterReport; passport?: object | null }> {
-  const { formats, filename, targetPeakDb, targetLufs, processing, dither = 'tpdf', onProgress, meta, sign } = options;
+  const { formats, filename, targetPeakDb, targetLufs, processing, dither = 'tpdf', onProgress, meta, sign, codecProof } = options;
   const baseName = filename.replace(/\.[^.]+$/, '');
 
   // Render through the full mastering chain + closed-loop loudness / true-peak matching
   onProgress?.('Rendering', 0);
-  const { buffer: rendered, report } = await renderMaster(buffer, {
+  const { buffer: rendered, report: renderedReport } = await renderMaster(buffer, {
     processing, targetPeakDb, targetLufs, onProgress,
   });
+  let report = renderedReport;
   onProgress?.('Rendering', 100);
 
   // Optional sample-rate conversion, shared by every format.
-  const master = options.sampleRate
+  let master = options.sampleRate
     ? await resampleBuffer(rendered, options.sampleRate)
     : rendered;
+
+  if (codecProof) {
+    onProgress?.('Codec check', 0);
+    const proof = await codecProofMaster(master, targetPeakDb, { onProgress: (label) => onProgress?.(`Codec check: ${label}`, 0) });
+    master = proof.buffer;
+    report = reportCodecProof(report, proof);
+    onProgress?.('Codec check', 100);
+  }
 
   const ids = formats.filter((id) => FORMAT_MAP[id]);
   if (ids.length === 0) ids.push('wav24');
@@ -553,9 +565,10 @@ export async function exportAllTargets(
     onProgress?: (label: string, pct: number) => void;
     meta?: ReleaseMeta;
     sign?: PassportSigner;
+    codecProof?: boolean;
   },
 ): Promise<{ blob: Blob; filename: string; reports: { name: string; report: MasterReport }[] }> {
-  const { targets, formatId, filename, processing, sampleRate, dither = 'shaped', onProgress, meta, sign } = options;
+  const { targets, formatId, filename, processing, sampleRate, dither = 'shaped', onProgress, meta, sign, codecProof } = options;
   const baseName = filename.replace(/\.[^.]+$/, '');
   const fmt = FORMAT_MAP[formatId] || FORMAT_MAP.wav24;
   const zip = new JSZip();
@@ -566,13 +579,19 @@ export async function exportAllTargets(
     const slug = t.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
     const span = 100 / targets.length;
     onProgress?.(t.name, Math.round(i * span));
-    const { buffer: rendered, report } = await renderMaster(buffer, {
+    const { buffer: rendered, report: renderedReport } = await renderMaster(buffer, {
       processing,
       targetPeakDb: t.peak,
       targetLufs: t.lufs,
       onProgress: (_l, pct) => onProgress?.(t.name, Math.round(i * span + (pct / 100) * span)),
     });
-    const master = sampleRate ? await resampleBuffer(rendered, sampleRate) : rendered;
+    let master = sampleRate ? await resampleBuffer(rendered, sampleRate) : rendered;
+    let report = renderedReport;
+    if (codecProof) {
+      const proof = await codecProofMaster(master, t.peak);
+      master = proof.buffer;
+      report = reportCodecProof(report, proof);
+    }
     let finalReport = report;
     try {
       const { data, check } = await encodeFormat(master, fmt, dither, meta, t.peak);
@@ -623,6 +642,15 @@ function formatReport(r: MasterReport, name: string): string {
       `On target           : ${r.onTarget ? 'yes (±0.3 LU)' : 'no'}`,
       `Loudness passes      : ${r.iterations}`,
       `Drive into chain     : ${r.driveDb >= 0 ? '+' : ''}${r.driveDb.toFixed(1)} dB`,
+    );
+  }
+  if (r.codecProof) {
+    const c = r.codecProof;
+    lines.push(
+      ``,
+      `Codec-proof check (loudest passages; ceiling ${c.ceilingDb.toFixed(1)} dBTP)`,
+      ...c.codecs.map((x) => `  ${x.label}: ${x.truePeakDb === null ? 'not available in this browser' : `${x.truePeakDb.toFixed(2)} dBTP after decoding`}`),
+      `  Level taken off for it: ${c.trimDb.toFixed(2)} dB${c.verified ? '' : ' (STILL OVER the ceiling)'}`,
     );
   }
   if (r.note) lines.push(``, `Note: ${r.note}`);

@@ -64,6 +64,8 @@ const ExportPanel = () => {
   const [selectedFormats, setSelectedFormats] = useState<string[]>(['wav24']);
   const [selectedPlatform, setSelectedPlatform] = useState('Spotify');
   const [sampleRate, setSampleRate] = useState(0);
+  // on by default: a master that is clean as a WAV can clip after the streaming service's MP3 / AAC / Opus transcode
+  const [codecProof, setCodecProof] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState('');
   const [report, setReport] = useState<MasterReport | null>(null);
@@ -98,6 +100,7 @@ const ExportPanel = () => {
         sampleRate: sampleRate || undefined,
         meta: metaOut(),
         sign: signer,
+        codecProof,
         onProgress: (label, pct) => setProgress(`${label}: ${pct}%`),
       });
       downloadBlob(result.blob, result.filename);
@@ -133,6 +136,7 @@ const ExportPanel = () => {
         sampleRate: sampleRate || undefined,
         meta: metaOut(),
         sign: signer,
+        codecProof,
         onProgress: (format, pct) => {
           setProgress(`${format}: ${pct}%`);
         },
@@ -225,6 +229,13 @@ const ExportPanel = () => {
               Target: {platform.lufs} LUFS / {platform.peak} dBFS TP
             </div>
           )}
+          <label className="flex items-start gap-2 mt-2 text-[10px] text-muted-foreground cursor-pointer">
+            <input type="checkbox" className="mt-0.5" checked={codecProof} onChange={(e) => setCodecProof(e.target.checked)} />
+            <span>
+              <span className="text-foreground">Codec-proof</span> — keep the master under the ceiling after MP3, AAC and Opus transcodes
+              (checked on the loudest passages; costs a fraction of a dB when a codec overshoots)
+            </span>
+          </label>
         </div>
 
         {/* Metadata */}
