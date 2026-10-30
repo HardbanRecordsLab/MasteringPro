@@ -119,10 +119,10 @@ export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: A
     const finished = withFades(rendered, jt.fadeInMs, jt.fadeOutMs);
 
     onProgress?.(i, 'Encoding', 95);
-    const { data } = await encodeFormat(finished, fmt, dither, {
+    const { data, check } = await encodeFormat(finished, fmt, dither, {
       title: jt.info.name, artist: album.performer, album: album.title, year: album.year, genre: album.genre,
       comment: `Track ${i + 1} of ${tracks.length}`,
-    });
+    }, targetPeakDb);
     const name = `${pad2(i + 1)} - ${sanitizeFileName(jt.info.name)}.${fmt.extension}`;
     zip.file(name, data);
     files.push(name);
@@ -134,7 +134,7 @@ export async function masterAlbum(job: AlbumJob): Promise<{ zip: Blob; report: A
       lufsBefore: round1(jt.info.lufs),
       lufsAfter: round1(measureIntegratedLoudness(finished)),
       targetLufs: round1(plan.targetLufs),
-      truePeakAfter: round1(measureTruePeak(finished).truePeak),
+      truePeakAfter: round1(check?.truePeakDb ?? measureTruePeak(finished).truePeak),     // lossy: the decoded file, not the buffer before encoding
       toneBeforeDb: plan.toneBeforeDb,
       toneAfterDb: plan.toneAfterDb,
       onTarget: report.onTarget,

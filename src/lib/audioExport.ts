@@ -19,6 +19,8 @@ export interface MasterReport {
   onTarget: boolean;
   /** set when the chain could not reach the target (loudness-saturated). */
   note?: string;
+  /** Lossy formats only: what the DECODED file measures after the encode-and-check loop (see {@link encodeWithinCeiling}). */
+  encoded?: { format: string; truePeakDb: number; trimDb: number; verified: boolean };
 }
 
 /**
@@ -230,16 +232,92 @@ export async function resampleBuffer(buffer: AudioBuffer, targetRate: number): P
   return ctx.startRendering();
 }
 
-/** Encode one rendered buffer to the requested container. */
+/** Outcome of {@link encodeWithinCeiling}. */
+export interface CeilingCheck {
+  data: Uint8Array;
+  /** true peak of the DECODED file, null when the browser could not decode it back */
+  truePeakDb: number | null;
+  /** level taken off the master (dB, >= 0) to keep the decoded file under the ceiling */
+  trimDb: number;
+  /** encode passes used (1 = the first encode already fit) */
+  passes: number;
+  /** the decoded file measures at or under the ceiling (within tolerance) */
+  verified: boolean;
+}
+
+/** Decode lossy bytes back with the browser's decoder (the same one players and streaming pipelines resemble). */
+export async function decodeInBrowser(bytes: Uint8Array, like: AudioBuffer): Promise<AudioBuffer> {
+  const ctx = new OfflineAudioContext(like.numberOfChannels, 1, like.sampleRate);
+  return ctx.decodeAudioData(bytes.slice().buffer);
+}
+
+/**
+ * A lossy encode is not level-neutral: MP3 quantisation moves inter-sample peaks, so a master sitting at −1.0 dBTP measured up
+ * to −0.4 dBTP after a 256 kbps encode (and +0.15 dB at 320 kbps) with the encoder we ship. The true-peak ceiling the user set
+ * must hold for the file that is actually delivered, not for the buffer before encoding.
+ *
+ * So: encode, decode again, measure; if the decoded file is over the ceiling take the overshoot (plus a small margin) off the
+ * master and encode again - at most `maxPasses` encodes. The 0.1 dB margin is there because true-peak meters and decoders differ by a few hundredths of a dB. When the browser cannot decode the result the file is delivered
+ * as encoded and reported as unverified.
+ */
+export async function encodeWithinCeiling(
+  master: AudioBuffer,
+  ceilingDb: number,
+  encode: (b: AudioBuffer) => Uint8Array | Promise<Uint8Array>,
+  decode: (bytes: Uint8Array, like: AudioBuffer) => Promise<AudioBuffer> = decodeInBrowser,
+  scale: (b: AudioBuffer, gain: number) => AudioBuffer = applyGain,
+  { toleranceDb = 0, marginDb = 0.1, maxPasses = 3 } = {},
+): Promise<CeilingCheck> {
+  let buf = master;
+  let trimDb = 0;
+  let data = await encode(buf);
+  for (let pass = 1; ; pass++) {
+    let tp: number;
+    try {
+      tp = measureTruePeak(await decode(data, buf)).truePeak;
+    } catch {
+      return { data, truePeakDb: null, trimDb, passes: pass, verified: false };
+    }
+    if (!Number.isFinite(tp)) return { data, truePeakDb: null, trimDb, passes: pass, verified: false };
+    const fits = tp <= ceilingDb + toleranceDb;
+    if (fits || pass >= maxPasses) return { data, truePeakDb: tp, trimDb, passes: pass, verified: fits };
+    const cut = tp - ceilingDb + marginDb;
+    trimDb += cut;
+    buf = scale(buf, Math.pow(10, -cut / 20));
+    data = await encode(buf);
+  }
+}
+
+/** Fold the outcome of the encode-and-check loop into the report the user sees (decoded true peak, loudness lost to the trim). */
+export function reportEncoded(report: MasterReport, fmt: ExportFormat, check: CeilingCheck | undefined): MasterReport {
+  if (!check || check.truePeakDb === null) return report;
+  const lufs = report.integratedLufs - check.trimDb;
+  const onTarget = report.targetLufs === null ? report.onTarget : Math.abs(lufs - report.targetLufs) <= 0.3;
+  const trimmed = check.trimDb > 0.005 ? ` ${fmt.id}: ${check.trimDb.toFixed(2)} dB taken off so the decoded file stays under ${report.targetPeakDb.toFixed(1)} dBTP.` : '';
+  return {
+    ...report,
+    integratedLufs: Math.round(lufs * 10) / 10,
+    truePeakDb: Math.round(check.truePeakDb * 10) / 10,
+    onTarget,
+    note: [report.note, trimmed.trim()].filter(Boolean).join(' ') || undefined,
+    encoded: { format: fmt.id, truePeakDb: Math.round(check.truePeakDb * 100) / 100, trimDb: Math.round(check.trimDb * 100) / 100, verified: check.verified },
+  };
+}
+
+/** Encode one rendered buffer to the requested container. With `ceilingDb`, an MP3 is checked after encoding (see {@link encodeWithinCeiling}). */
 export async function encodeFormat(
   buffer: AudioBuffer,
   fmt: ExportFormat,
   dither: DitherMode,
   meta?: ReleaseMeta,
-): Promise<{ data: ArrayBuffer | Uint8Array; mime: string }> {
+  ceilingDb?: number,
+): Promise<{ data: ArrayBuffer | Uint8Array; mime: string; check?: CeilingCheck }> {
   if (fmt.kind === 'mp3') {
     const { encodeMp3 } = await import('@/lib/encoders/mp3');
-    return { data: tagMp3(encodeMp3(buffer, fmt.kbps ?? 320), meta), mime: 'audio/mpeg' };
+    const encode = (b: AudioBuffer) => encodeMp3(b, fmt.kbps ?? 320);
+    if (ceilingDb === undefined) return { data: tagMp3(encode(buffer), meta), mime: 'audio/mpeg' };
+    const check = await encodeWithinCeiling(buffer, ceilingDb, encode);
+    return { data: tagMp3(check.data, meta), mime: 'audio/mpeg', check };
   }
   if (fmt.kind === 'flac') {
     const { encodeFlac } = await import('@/lib/encoders/flac');
@@ -401,27 +479,30 @@ export async function exportAudio(
   if (ids.length === 1) {
     const fmt = FORMAT_MAP[ids[0]];
     onProgress?.(fmt.id, 0);
-    const { data, mime } = await encodeFormat(master, fmt, dither, meta);
+    const { data, mime, check } = await encodeFormat(master, fmt, dither, meta, targetPeakDb);
     onProgress?.(fmt.id, 100);
     const name = `${baseName}_master.${fmt.extension}`;
+    const finalReport = reportEncoded(report, fmt, check);
     return {
       blob: new Blob([data], { type: mime }),
       filename: name,
-      report,
-      passport: await passportFor(sign, name, data, fmt, master, report, meta),
+      report: finalReport,
+      passport: await passportFor(sign, name, data, fmt, master, finalReport, meta),
     };
   }
 
   // Multiple formats → ZIP
   const zip = new JSZip();
+  const lossyLines: string[] = [];
   for (const id of ids) {
     const fmt = FORMAT_MAP[id];
     onProgress?.(fmt.id, 0);
     try {
-      const { data } = await encodeFormat(master, fmt, dither, meta);
+      const { data, check } = await encodeFormat(master, fmt, dither, meta, targetPeakDb);
       const name = `${baseName}_${fmt.suffix}.${fmt.extension}`;
       zip.file(name, data);
-      const pp = await passportFor(sign, name, data, fmt, master, report, meta);
+      if (check) lossyLines.push(lossyLine(fmt, check, targetPeakDb));
+      const pp = await passportFor(sign, name, data, fmt, master, check ? reportEncoded(report, fmt, check) : report, meta);
       if (pp) zip.file(`${name}.passport.json`, JSON.stringify(pp, null, 2));
     } catch (e) {
       console.error(`[export] ${fmt.id} failed, falling back to WAV`, e);
@@ -430,7 +511,8 @@ export async function exportAudio(
     onProgress?.(fmt.id, 100);
   }
 
-  zip.file('_MASTER_REPORT.txt', formatReport(report, baseName));
+  const lossyReport = lossyLines.length ? ['', 'Decoded-file check (lossy formats)', ...lossyLines, ''].join('\n') : '';
+  zip.file('_MASTER_REPORT.txt', formatReport(report, baseName) + lossyReport);
 
   onProgress?.('ZIP', 0);
   const zipBlob = await zip.generateAsync({ type: 'blob' }, (meta) => {
@@ -491,17 +573,19 @@ export async function exportAllTargets(
       onProgress: (_l, pct) => onProgress?.(t.name, Math.round(i * span + (pct / 100) * span)),
     });
     const master = sampleRate ? await resampleBuffer(rendered, sampleRate) : rendered;
+    let finalReport = report;
     try {
-      const { data } = await encodeFormat(master, fmt, dither, meta);
+      const { data, check } = await encodeFormat(master, fmt, dither, meta, t.peak);
       const name = `${baseName}_${slug}.${fmt.extension}`;
       zip.file(name, data);
-      const pp = await passportFor(sign, name, data, fmt, master, report, meta);
+      if (check) finalReport = reportEncoded(report, fmt, check);
+      const pp = await passportFor(sign, name, data, fmt, master, finalReport, meta);
       if (pp) zip.file(`${name}.passport.json`, JSON.stringify(pp, null, 2));
     } catch (e) {
       console.error(`[exportAllTargets] ${t.name} ${fmt.id} failed, WAV fallback`, e);
       zip.file(`${baseName}_${slug}_FALLBACK.wav`, encodeWav(master, 24, dither));
     }
-    reports.push({ name: t.name, report });
+    reports.push({ name: t.name, report: finalReport });
   }
 
   zip.file(
@@ -515,6 +599,12 @@ export async function exportAllTargets(
   const blob = await zip.generateAsync({ type: 'blob' }, (m) => onProgress?.('ZIP', Math.round(m.percent)));
   onProgress?.('ZIP', 100);
   return { blob, filename: `${baseName}_all-targets.zip`, reports };
+}
+
+function lossyLine(fmt: ExportFormat, c: CeilingCheck, ceilingDb: number): string {
+  if (c.truePeakDb === null) return `${fmt.id}: could not be decoded back here, true peak not verified`;
+  return `${fmt.id}: decoded true peak ${c.truePeakDb.toFixed(2)} dBTP (ceiling ${ceilingDb.toFixed(1)})` +
+    (c.trimDb > 0.005 ? `, ${c.trimDb.toFixed(2)} dB taken off the master (${c.passes} encodes)` : ', no trim needed') + (c.verified ? '' : ', STILL OVER the ceiling');
 }
 
 /** Human-readable delivery report bundled with a ZIP export. */
