@@ -18,6 +18,11 @@ export function getDb() {
   return _db;
 }
 
+/** Tests inject an in-memory database. */
+export function setDbForTests(db) {
+  _db = db;
+}
+
 export function getSql() {
   getDb();
   return _sql;

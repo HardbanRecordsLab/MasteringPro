@@ -3,6 +3,7 @@ import { argon2id, argon2Verify } from 'hash-wasm';
 import { eq, and, gt, lt } from 'drizzle-orm';
 import { getDb, schema } from './db/index.js';
 import { config } from './config.js';
+import { wallet, walletEnabled } from './services/wallet.js';
 
 const COOKIE = 'mp_session';
 
@@ -115,4 +116,19 @@ export async function requireUser(c, next) {
 
 export function publicUser(u) {
   return { id: u.id, email: u.email, displayName: u.displayName, plan: u.plan, credits: u.credits ?? 0 };
+}
+
+/** Accounts linked to HRL Wallet keep their credits there: shown in TRACKS (1 track = 9 wallet credits). */
+export const isWalletUser = (u) => Boolean(u?.walletAccountId && walletEnabled());
+
+export async function userPayload(u) {
+  const out = publicUser(u);
+  if (!isWalletUser(u)) return out;
+  try {
+    out.credits = (await wallet.balance(u.walletAccountId)).units;
+  } catch (e) {
+    console.warn('[wallet] balance unavailable for', u.id, e.code || e.message);
+    out.credits_unavailable = true;
+  }
+  return out;
 }

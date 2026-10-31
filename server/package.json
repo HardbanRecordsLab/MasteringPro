@@ -12,7 +12,9 @@
     "dev": "node --watch src/index.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node src/db/migrate.js",
-    "db:selftest": "node scripts/db-selftest.mjs"
+    "db:selftest": "node scripts/db-selftest.mjs",
+    "billing:selftest": "node scripts/billing-selftest.mjs",
+    "wallet:selftest": "node scripts/wallet-selftest.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",

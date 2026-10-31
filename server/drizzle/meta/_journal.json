@@ -29,6 +29,13 @@
       "when": 1792253610458,
       "tag": "0003_export_charges",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793419883498,
+      "tag": "0004_wallet_account",
+      "breakpoints": true
     }
   ]
 }

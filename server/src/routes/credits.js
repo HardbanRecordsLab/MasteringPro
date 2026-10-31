@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
-import { requireUser } from '../auth.js';
+import { createHash } from 'node:crypto';
+import { requireUser, isWalletUser } from '../auth.js';
+import { wallet, WalletError, WalletUnavailable } from '../services/wallet.js';
 import { config } from '../config.js';
 import { getDb } from '../db/index.js';
 import { chargeExports, EXPORT_WINDOW_DAYS, MAX_TRACKS_PER_EXPORT } from '../services/exportCredits.js';
@@ -31,6 +33,7 @@ creditsRoutes.post('/export', requireUser, async (c) => {
     // metering not switched on yet: nothing is charged
     return c.json({ charged: 0, covered: tracks.length, credits: user.credits ?? 0, covered_until: null, window_days: EXPORT_WINDOW_DAYS, metering: false });
   }
+  if (isWalletUser(user)) return chargeInWallet(c, user, tracks);
   const r = await chargeExports(getDb(), user.id, tracks);
   if (!r.ok) {
     return c.json(
@@ -45,3 +48,28 @@ creditsRoutes.post('/export', requireUser, async (c) => {
   }
   return c.json({ charged: r.charged, covered: r.covered, credits: r.credits, covered_until: r.coveredUntil, window_days: EXPORT_WINDOW_DAYS });
 });
+
+// Credits live in HRL Wallet: 1 track = 9 credits, the same track is free for 3 days, an album is all or nothing.
+// The key covers the exact set of tracks inside one minute, so a double click or a retried request charges once.
+async function chargeInWallet(c, user, tracks) {
+  const set = [...new Set(tracks.map((t) => String(t.key)))].sort().join('\n');
+  const key = `mp:export:${user.walletAccountId}:${createHash('sha256').update(set).digest('hex').slice(0, 24)}:${Math.floor(Date.now() / 60000)}`;
+  try {
+    const r = await wallet.chargeExport(user.walletAccountId, key, tracks.map((t) => ({ key: String(t.key), label: String(t.label || '').slice(0, 200) })));
+    const bal = await wallet.balance(user.walletAccountId);
+    // a replay is the same request paid a moment ago (double click, retry): this one costs nothing
+    const unique = new Set(tracks.map((t) => String(t.key))).size;
+    const charged = r.replayed ? 0 : r.charged_units ?? 0;
+    return c.json({ charged, covered: r.replayed ? unique : r.covered ?? 0, credits: bal.units, covered_until: r.covered_until ?? null, window_days: EXPORT_WINDOW_DAYS });
+  } catch (e) {
+    if (e instanceof WalletUnavailable) return c.json({ error: 'WALLET_UNAVAILABLE', message: 'Kredyty są chwilowo niedostępne — spróbuj za minutę.' }, 503);
+    if (e instanceof WalletError && e.status === 402) {
+      const cost = e.payload.cost || 9;
+      const needed = Math.ceil((e.payload.needed ?? cost) / cost);
+      const have = Math.floor((e.payload.credits ?? 0) / cost);
+      return c.json({ error: 'CREDITS_EXHAUSTED', message: `Brak kredytów: ten eksport wymaga ${needed}, masz ${have}. Dokup pakiet, aby kontynuować.`, needed, credits: have }, 402);
+    }
+    console.error('[credits] wallet charge failed:', e.message);
+    return c.json({ error: 'Could not charge credits' }, 502);
+  }
+}

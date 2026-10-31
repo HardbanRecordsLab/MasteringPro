@@ -92,6 +92,13 @@ export const config = {
   // Operator accounts (comma-separated e-mails): full access, never charged for exports, no AI daily cap.
   adminEmails: list(process.env.ADMIN_EMAILS).map((e) => e.toLowerCase()),
 
+  // HRL Wallet: one account and one credits balance shared with the other HRL apps (1 track = 9 wallet credits). Off unless enabled.
+  wallet: {
+    enabled: bool(process.env.WALLET_ENABLED, false),
+    url: process.env.WALLET_URL || "http://hrl-wallet:8790",
+    token: process.env.WALLET_TOKEN || "",
+  },
+
   // Stripe — same account/keys as Metadata Engine (shared, per 2026-09-23
   // decision), credit packs defined in services/stripeBilling.js.
   stripe: {

@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { eq, sql } from 'drizzle-orm';
 import { getDb, schema } from '../db/index.js';
-import { requireUser } from '../auth.js';
+import { requireUser, isWalletUser } from '../auth.js';
+import { wallet, WalletError, WalletUnavailable } from '../services/wallet.js';
 import { config } from '../config.js';
 import {
   CREDIT_PACKS,
@@ -27,20 +28,35 @@ billingRoutes.get('/packs', async (c) => {
 billingRoutes.get('/history', requireUser, async (c) => {
   const user = c.get('user');
   const db = getDb();
+  let walletRows = [];
+  if (isWalletUser(user)) {
+    try {
+      walletRows = (await wallet.purchases(user.walletAccountId)).map((p) => ({
+        id: p.id,
+        pack_id: p.pack_id,
+        credits_added: CREDIT_PACKS[p.pack_id]?.credits ?? p.credits,   // in tracks, as this app counts
+        amount_total: p.amount_cents,
+        currency: p.currency,
+        created_at: p.created_at,
+      }));
+    } catch (e) {
+      console.warn('[billing] wallet purchases unavailable:', e.code || e.message);
+    }
+  }
   const rows = await db
     .select()
     .from(schema.creditPurchases)
     .where(eq(schema.creditPurchases.userId, user.id))
     .orderBy(sql`${schema.creditPurchases.createdAt} desc`);
   return c.json({
-    purchases: rows.map((p) => ({
+    purchases: [...walletRows, ...rows.map((p) => ({
       id: p.stripeSessionId,
       pack_id: p.packId,
       credits_added: p.creditsAdded,
       amount_total: p.amountTotal,
       currency: p.currency,
       created_at: p.createdAt,
-    })),
+    }))],
   });
 });
 
@@ -48,6 +64,26 @@ billingRoutes.get('/history', requireUser, async (c) => {
 const requestLang = (c) => (/(?:^|;\s*)hrl_lang=pl/.test(c.req.header('cookie') || '') ? 'pl' : 'en');
 
 billingRoutes.post('/checkout', requireUser, async (c) => {
+  if (isWalletUser(c.get('user'))) {
+    // Credits live in HRL Wallet: it creates the session (same Stripe Price objects) and credits the pack from its own webhook.
+    let body;
+    try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON body' }, 400); }
+    if (!CREDIT_PACKS[body?.pack_id]) return c.json({ error: 'Unknown credit pack' }, 400);
+    try {
+      const r = await wallet.checkout(
+        c.get('user').walletAccountId,
+        body.pack_id,
+        config.stripe.successUrl || 'https://masteringpro.hardbanrecordslab.online/?billing=success&session_id={CHECKOUT_SESSION_ID}',
+        config.stripe.cancelUrl || 'https://masteringpro.hardbanrecordslab.online/?billing=cancelled',
+        requestLang(c),
+      );
+      return c.json({ checkout_url: r.checkout_url, session_id: r.session_id });
+    } catch (e) {
+      if (e instanceof WalletUnavailable) return c.json({ error: 'Payments are temporarily unavailable. Please try again in a minute.' }, 503);
+      if (e instanceof WalletError && e.status < 500) return c.json({ error: e.message || 'Could not create checkout session' }, 400);
+      return c.json({ error: 'Could not create checkout session' }, 502);
+    }
+  }
   if (!config.stripe.secretKey) {
     return c.json(
       { error: 'Payments are not configured. Add STRIPE_SECRET_KEY and pack Price IDs on the server.' },

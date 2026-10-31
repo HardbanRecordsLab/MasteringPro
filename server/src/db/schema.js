@@ -31,6 +31,8 @@ export const users = pgTable('users', {
   // before buying a pack; see services/stripeBilling.js for pack definitions.
   credits: integer('credits').notNull().default(3),
   emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+  // HRL Wallet account (credits and password live there while WALLET_ENABLED); null = the old local credits (operator accounts)
+  walletAccountId: text('wallet_account_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
