@@ -10,6 +10,8 @@ export async function processStripeEvent(db, event) {
     case 'checkout.session.completed':
     case 'checkout.session.async_payment_succeeded': {
       const session = event.data.object;
+      // Sessions created by HRL Wallet are credited there (its own webhook), never here.
+      if (session.metadata?.source === 'hrl-wallet') return { body: { status: 'ignored', reason: 'hrl-wallet session' } };
       // Delayed methods (e.g. bank transfer): 'completed' arrives unpaid, credits are granted on async_payment_succeeded.
       if (session.payment_status !== 'paid') return { body: { status: 'waiting', reason: 'not paid yet' } };
 

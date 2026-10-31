@@ -45,6 +45,9 @@ ok(r.body.status === 'waiting' && (await credits(u.id)) === 23, 'unpaid (delayed
 r = await processStripeEvent(db, checkout('checkout.session.async_payment_succeeded', 'cs_3'));
 ok(r.body.status === 'success' && (await credits(u.id)) === 33, 'async_payment_succeeded → credits granted');
 
+r = await processStripeEvent(db, checkout('checkout.session.completed', 'cs_w1', { metadata: { source: 'hrl-wallet', wallet_account_id: 'w1', credits: '10' } }));
+ok(r.body.status === 'ignored' && (await credits(u.id)) === 33, 'a session made by HRL Wallet is left to the wallet (no credits here)');
+
 const charge = (pi, amount, refunded) => ({ type: 'charge.refunded', data: { object: { payment_intent: pi, amount, amount_refunded: refunded } } });
 r = await processStripeEvent(db, charge('pi_cs_3', 3900, 1500));
 ok(r.body.status === 'ignored' && (await credits(u.id)) === 33, 'partial refund leaves credits (manual decision)');
